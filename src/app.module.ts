@@ -9,10 +9,11 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { ReportsModule } from './reports/reports.module';
 import { EmergencyModule } from './emergency/emergency.module';
 import { AdminModule } from './admin/admin.module';
+import { DanaModule } from './dana/dana.module';
 
 @Module({
   imports: [UsersModule,  AuthModule, PrismaModule , 
-    ConfigModule.forRoot({ isGlobal: true }), AnnouncementsModule, ReportsModule,EmergencyModule , AdminModule// 🔥 aktifkan .env
+    ConfigModule.forRoot({ isGlobal: true }), AnnouncementsModule, ReportsModule,EmergencyModule , AdminModule, DanaModule// 🔥 aktifkan .env
   ],
   controllers: [AppController],
   providers: [AppService],

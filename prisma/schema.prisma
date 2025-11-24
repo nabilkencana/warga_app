@@ -12,6 +12,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+  
 }
 
 // schema.prisma (PERBAIKAN)
@@ -32,7 +33,7 @@ model User {
   rtRw             String
   kkFile           String?
   role             String            @default("user")
-  photo            String?
+  fotoProfil       String?
   bio              String?
   isVerified       Boolean           @default(false)
   twoFactorEnabled Boolean           @default(false)

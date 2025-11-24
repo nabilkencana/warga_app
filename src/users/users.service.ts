@@ -306,7 +306,7 @@ export class UsersService {
 
   // 🟢 Update user role
   async updateUserRole(id: number, role: string) {
-    const validRoles = ['user', 'admin'];
+    const validRoles = ['user', 'admin' , 'relawan'];
     if (!validRoles.includes(role)) {
       throw new BadRequestException('Role tidak valid. Gunakan: user atau admin');
     }

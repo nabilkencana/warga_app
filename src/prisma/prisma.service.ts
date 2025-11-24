@@ -1,3 +1,4 @@
+// src/prisma/prisma.service.ts
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
@@ -6,15 +7,30 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   constructor() {
     super({
       log: ['query', 'info', 'warn', 'error'],
+      errorFormat: 'colorless',
+      // ✅ Optimasi connection pool
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
     });
   }
+
   async onModuleInit() {
     await this.$connect();
-    console.log('✅ Database connected successfully');
+    console.log('✅ Prisma connected to database');
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
-    console.log('❌ Database disconnected');
+    console.log('❌ Prisma disconnected from database');
+  }
+
+  // ✅ Handle clean shutdown
+  async enableShutdownHooks() {
+    process.on('beforeExit', async () => {
+      await this.$disconnect();
+    });
   }
 }

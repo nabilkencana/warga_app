@@ -135,7 +135,7 @@ export class UpdateUserDto {
     @IsString()
     rtRw?: string;
 
-    @ApiProperty({ description: 'Role user', required: false, enum: ['user', 'admin'] })
+    @ApiProperty({ description: 'Role user', required: false, enum: ['user', 'admin', 'relawan'] })
     @IsOptional()
     @IsString()
     role?: string;
