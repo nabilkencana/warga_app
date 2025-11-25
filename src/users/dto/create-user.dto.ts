@@ -1,6 +1,7 @@
 // src/users/dto/create-user.dto.ts
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsDateString, IsPhoneNumber, IsPostalCode } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsDateString, IsPhoneNumber, IsPostalCode, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 
 export class CreateUserDto {
     @ApiProperty({ description: 'Nama lengkap user' })
@@ -135,8 +136,8 @@ export class UpdateUserDto {
     @IsString()
     rtRw?: string;
 
-    @ApiProperty({ description: 'Role user', required: false, enum: ['user', 'admin', 'relawan'] })
+    @ApiProperty({ description: 'Role user', required: false, enum: ['user', 'admin', 'super_admin'] })
     @IsOptional()
-    @IsString()
-    role?: string;
+    @IsEnum(UserRole)
+    role?: UserRole;
 }

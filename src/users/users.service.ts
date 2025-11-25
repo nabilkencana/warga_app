@@ -2,7 +2,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -15,7 +15,7 @@ export class UsersService {
     const whereCondition = search ? {
       OR: [
         { namaLengkap: { contains: search } },
-        { email: { contains: search} },
+        { email: { contains: search } },
         { nik: { contains: search } },
         { nomorTelepon: { contains: search } },
       ],
@@ -105,7 +105,7 @@ export class UsersService {
           kodePos: createUserDto.kodePos,
           rtRw: createUserDto.rtRw,
           kkFile: file ? file.filename : null,
-          role: 'user',
+          role: UserRole.USER, // FIXED: Gunakan enum UserRole.USER 
           isVerified: false,
         },
         select: {
@@ -246,7 +246,13 @@ export class UsersService {
       if (updateUserDto.negara) updateData.negara = updateUserDto.negara;
       if (updateUserDto.kodePos) updateData.kodePos = updateUserDto.kodePos;
       if (updateUserDto.rtRw) updateData.rtRw = updateUserDto.rtRw;
-      if (updateUserDto.role) updateData.role = updateUserDto.role;
+
+      // FIXED: Handle role dengan enum UserRole
+      if (updateUserDto.role) {
+        const validRole = this.convertToUserRole(updateUserDto.role);
+        updateData.role = validRole;
+      }
+
       if (file) updateData.kkFile = file.filename;
 
       const updatedUser = await this.prisma.user.update({
@@ -304,12 +310,10 @@ export class UsersService {
     };
   }
 
-  // 🟢 Update user role
+  // 🟢 Update user role - FIXED VERSION
   async updateUserRole(id: number, role: string) {
-    const validRoles = ['user', 'admin' , 'relawan'];
-    if (!validRoles.includes(role)) {
-      throw new BadRequestException('Role tidak valid. Gunakan: user atau admin');
-    }
+    // FIXED: Convert string role ke enum UserRole
+    const validRole = this.convertToUserRole(role);
 
     const user = await this.prisma.user.findUnique({ where: { id } });
 
@@ -319,7 +323,7 @@ export class UsersService {
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
-      data: { role },
+      data: { role: validRole }, // FIXED: Gunakan enum UserRole
       select: {
         id: true,
         namaLengkap: true,
@@ -360,12 +364,12 @@ export class UsersService {
     };
   }
 
-  // 🟢 Get user statistics
+  // 🟢 Get user statistics - FIXED VERSION
   async getUserStats() {
     const [totalUsers, verifiedUsers, adminUsers] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { isVerified: true } }),
-      this.prisma.user.count({ where: { role: 'admin' } }),
+      this.prisma.user.count({ where: { role: UserRole.ADMIN } }), // FIXED: Gunakan enum
     ]);
 
     return {
@@ -443,5 +447,54 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  // 🟢 Helper method: Convert string role to UserRole enum - NEW METHOD
+  private convertToUserRole(roleString: string): UserRole {
+    const roleMap: { [key: string]: UserRole } = {
+      'user': UserRole.USER,
+      'admin': UserRole.ADMIN,
+      'super_admin': UserRole.SUPER_ADMIN,
+      'super admin': UserRole.SUPER_ADMIN,
+      'superadmin': UserRole.SUPER_ADMIN,
+      'treasurer': UserRole.USER,
+      'member': UserRole.USER,
+      'relawan': UserRole.USER, // Map 'relawan' ke MEMBER atau buat enum baru jika diperlukan
+    };
+
+    const normalizedRole = roleString.toLowerCase().trim();
+    const role = roleMap[normalizedRole];
+
+    if (!role) {
+      throw new BadRequestException(
+        `Role '${roleString}' tidak valid. Gunakan: user, admin, super_admin, treasurer, atau member`
+      );
+    }
+
+    return role;
+  }
+
+  // 🟢 Additional method: Get users by role dengan enum - NEW METHOD
+  async getUsersByRole(role: UserRole) {
+    return this.prisma.user.findMany({
+      where: { role },
+      select: {
+        id: true,
+        namaLengkap: true,
+        email: true,
+        role: true,
+        isVerified: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  // 🟢 Additional method: Get admin count dengan enum - NEW METHOD
+  async getAdminCount(): Promise<number> {
+    return this.prisma.user.count({
+      where: {
+        role: UserRole.ADMIN
+      }
+    });
   }
 }

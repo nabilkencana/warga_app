@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,48 +9,253 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  
 }
 
-// schema.prisma (PERBAIKAN)
+// === USER MANAGEMENT ===
 model User {
-  id               Int               @id @default(autoincrement())
-  namaLengkap      String
-  nik              String            @unique
-  tanggalLahir     DateTime
-  tempatLahir      String
-  email            String            @unique
-  nomorTelepon     String
-  instagram        String?
-  facebook         String?
-  alamat           String
-  kota             String
-  negara           String
-  kodePos          String
-  rtRw             String
-  kkFile           String?
-  role             String            @default("user")
-  fotoProfil       String?
-  bio              String?
-  isVerified       Boolean           @default(false)
-  twoFactorEnabled Boolean           @default(false)
-  twoFactorSecret  String?
-  language         String            @default("id")
-  biometricData    String?
-  otpCode          String?
-  otpExpire        DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                        Int                 @id @default(autoincrement())
+  namaLengkap               String
+  nik                       String              @unique
+  tanggalLahir              DateTime
+  tempatLahir               String
+  email                     String              @unique
+  nomorTelepon              String
+  instagram                 String?
+  facebook                  String?
+  alamat                    String
+  kota                      String
+  negara                    String              @default("Indonesia")
+  kodePos                   String
+  rtRw                      String
+  kkFile                    String?
+  role                      UserRole            @default(USER)
+  fotoProfil                String?
+  bio                       String?
+  isVerified                Boolean             @default(false)
+  twoFactorEnabled          Boolean             @default(false)
+  twoFactorSecret           String?
+  language                  String              @default("id")
+  biometricData             String?
+  otpCode                   String?
+  otpExpire                 DateTime?
+  isActive                  Boolean             @default(true)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
 
-  //               Relations
-  announcements    Announcement[]
-  reports          Report[]
-  emergencies      Emergency[]
-  volunteers       Volunteer[]
+  // Relations - Existing
+  announcements             Announcement[]
+  reports                   Report[]
+  emergencies               Emergency[]
+  volunteers                Volunteer[]
+  adminDashboards           AdminDashboard[]
+  activityLogs              ActivityLog[]
 
-  adminDashboards  AdminDashboard[]
-  activityLogs     ActivityLog[]
+  // Relations - Dana Community
+  transactions              Transaction[]      @relation("UserTransactions")
+  createdTransactions       Transaction[]      @relation("TransactionCreatedBy")
+  payments                  Payment[]          @relation("UserPayments")
+  memberPayments            MemberPayment[]
+  createdFinancialSummaries FinancialSummary[]
+  createdFinancialReports   FinancialReport[]
+
+  // Relations - Bill System (NEW)
+  bills                     Bill[]             @relation("UserBills")
+  createdBills              Bill[]             @relation("CreatedBills")
+
+  @@map("users")
 }
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+// === DANA COMMUNITY MODELS ===
+
+// Transaksi (Pemasukan/Pengeluaran)
+model Transaction {
+  id          Int              @id @default(autoincrement())
+  amount      Float
+  type        TransactionType
+  category    String
+  description String
+  date        DateTime         @default(now())
+  proofImage  String?
+  createdBy   Int
+  userId      Int? // Untuk transaksi yang terkait dengan user tertentu
+  paymentId   Int? // Jika transaksi terkait pembayaran
+
+  // Relations
+  user        User?            @relation("UserTransactions", fields: [userId], references: [id])
+  createdByUser User           @relation("TransactionCreatedBy", fields: [createdBy], references: [id])
+  payment     Payment?         @relation("PaymentTransactions", fields: [paymentId], references: [id])
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+// Pembayaran (QRIS, Mobile Banking, Cash)
+model Payment {
+  id            Int            @id @default(autoincrement())
+  amount        Float
+  method        PaymentMethod
+  status        PaymentStatus  @default(PENDING)
+  description   String
+  dueDate       DateTime
+  paidDate      DateTime?
+  qrCode        String?        // QR Code data untuk QRIS
+  bankReference String?        // Referensi bank untuk mobile banking
+  receiptImage  String?        // Bukti transfer/tanda terima
+  userId        Int            // User yang melakukan pembayaran
+
+  // Relations
+  user          User           @relation("UserPayments", fields: [userId], references: [id])
+  transactions  Transaction[]  @relation("PaymentTransactions")
+  memberPayment MemberPayment? @relation("PaymentMemberPayment")
+  bill          Bill?          @relation("PaymentBill") // NEW: Relation ke Bill
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  CASH
+  QRIS
+  MOBILE_BANKING
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+  FAILED
+}
+
+// Status Pembayaran Member per Bulan
+model MemberPayment {
+  id       Int      @id @default(autoincrement())
+  month    Int      // 1-12
+  year     Int      // 2024, 2025, etc
+  amount   Float    // Jumlah yang harus dibayar
+  isPaid   Boolean  @default(false)
+  paidDate DateTime?
+  dueDate  DateTime // Tanggal jatuh tempo
+  userId   Int
+  paymentId Int?    @unique // Link ke Payment
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id])
+  payment  Payment? @relation("PaymentMemberPayment", fields: [paymentId], references: [id])
+
+  @@unique([userId, month, year])
+  @@map("member_payments")
+}
+
+// Ringkasan Keuangan Bulanan
+model FinancialSummary {
+  id           Int      @id @default(autoincrement())
+  month        Int
+  year         Int
+  totalIncome  Float    @default(0)
+  totalExpense Float    @default(0)
+  balance      Float    @default(0)
+  createdBy    Int
+
+  // Relations
+  createdByUser User    @relation(fields: [createdBy], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([month, year])
+  @@map("financial_summaries")
+}
+
+// Kategori Transaksi
+model TransactionCategory {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  type        TransactionType
+  description String?
+  isActive    Boolean          @default(true)
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("transaction_categories")
+}
+
+// Laporan Keuangan
+model FinancialReport {
+  id          Int         @id @default(autoincrement())
+  title       String
+  description String?
+  periodStart DateTime
+  periodEnd   DateTime
+  reportType  ReportType
+  fileUrl     String?     // URL file laporan (PDF/Excel)
+  createdBy   Int
+
+  // Relations
+  createdByUser User      @relation(fields: [createdBy], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("financial_reports")
+}
+
+enum ReportType {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+// === BILL SYSTEM (NEW) ===
+
+model Bill {
+  id          String     @id @default(cuid())
+  title       String
+  description String
+  amount      Float
+  dueDate     DateTime
+  status      BillStatus @default(PENDING)
+  userId      Int
+  createdBy   Int
+  paymentId   Int?       @unique // Link ke Payment ketika sudah dibayar
+  paidAt      DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  user        User       @relation("UserBills", fields: [userId], references: [id], onDelete: Cascade)
+  createdByUser User     @relation("CreatedBills", fields: [createdBy], references: [id], onDelete: Cascade)
+  payment     Payment?   @relation("PaymentBill", fields: [paymentId], references: [id])
+
+  @@map("bills")
+}
+
+enum BillStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// === EXISTING MODELS (Tetap dipertahankan) ===
 
 model Announcement {
   id             Int       @id @default(autoincrement())
@@ -66,7 +268,6 @@ model Announcement {
   updatedAt      DateTime  @updatedAt
   createdBy      Int
 
-  // Relation ke User
   admin          User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
 }
 
@@ -130,10 +331,24 @@ model AdminDashboard {
   totalActiveEmergencies Int       @default(0)
   reportPendingCount     Int       @default(0)
   reportResolvedCount    Int       @default(0)
-  date                   DateTime  @default(now())
 
-  // Relasi ke admin yang membuat laporan statistik
+  // Dana Community Stats
+  totalTransactions      Int       @default(0)
+  totalIncome            Float     @default(0)
+  totalExpense           Float     @default(0)
+  currentBalance         Float     @default(0)
+  paidMembers            Int       @default(0)
+  unpaidMembers          Int       @default(0)
+
+  // Bill System Stats (NEW)
+  totalBills             Int       @default(0)
+  pendingBills           Int       @default(0)
+  paidBills              Int       @default(0)
+  overdueBills           Int       @default(0)
+
+  date                   DateTime  @default(now())
   adminId                Int
+
   admin                  User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   @@map("admin_dashboards")

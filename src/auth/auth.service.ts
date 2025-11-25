@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { OAuth2Client } from 'google-auth-library';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -227,7 +228,7 @@ export class AuthService {
           instagram: null,
           facebook: null,
           // System fields
-          role: 'USER',
+          role: UserRole.USER,
           isVerified: true,
         };
 
@@ -336,7 +337,7 @@ export class AuthService {
             email: googlePayload.email,
             namaLengkap: googlePayload.name || 'Google User',
             fotoProfil: googlePayload.picture,
-            role: 'USER',
+            role: UserRole.USER,
             isVerified: true,
             nik: `GOOGLE_${Date.now()}`, // Unique NIK untuk Google users
             tanggalLahir: new Date('1990-01-01'), // Default tanggal lahir
