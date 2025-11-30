@@ -9,6 +9,9 @@ import { Resend } from 'resend';
 
 @Injectable()
 export class AuthService {
+  googleMobileLogin(body: any) {
+    throw new Error('Method not implemented.');
+  }
   private readonly logger = new Logger(AuthService.name);
   private googleClient: OAuth2Client;
   private resend: Resend;
