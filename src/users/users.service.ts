@@ -1,12 +1,16 @@
 // src/users/users.service.ts
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 import { Prisma, UserRole } from '@prisma/client';
+import { CloudinaryService, CloudinaryUploadResult } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private cloudinaryService: CloudinaryService,
+  ) { }
 
   // 🟢 Get all users dengan pagination dan filter
   async getAllUsers(page: number = 1, limit: number = 10, search?: string) {
@@ -53,61 +57,227 @@ export class UsersService {
     };
   }
 
-  // 🟢 Register new user - FIXED VERSION
+  // 🟢 Register new user dengan Cloudinary
   async register(createUserDto: CreateUserDto, file?: Express.Multer.File) {
-    try {
-      // 🔍 Cek apakah email sudah terdaftar
-      const existingUserByEmail = await this.prisma.user.findUnique({
-        where: { email: createUserDto.email },
+  try {
+    console.log('📥 Received registration data:', createUserDto);
+    
+    // 🔍 Validasi required fields
+    if (!createUserDto.tanggalLahir) {
+      throw new BadRequestException('Tanggal lahir harus diisi');
+    }
+
+    // 🔍 Cek apakah email sudah terdaftar
+    const existingUserByEmail = await this.prisma.user.findUnique({
+      where: { email: createUserDto.email },
+    });
+
+    if (existingUserByEmail) {
+      throw new ConflictException('Email sudah terdaftar, silakan gunakan email lain.');
+    }
+
+    // 🔍 Cek apakah NIK sudah terdaftar
+    if (createUserDto.nik) {
+      const existingUserByNik = await this.prisma.user.findFirst({
+        where: { nik: createUserDto.nik },
       });
 
-      if (existingUserByEmail) {
-        throw new ConflictException('Email sudah terdaftar, silakan gunakan email lain.');
+      if (existingUserByNik) {
+        throw new ConflictException('NIK sudah terdaftar.');
+      }
+    }
+
+    // 🟢 Validasi file jika ada
+    let cloudinaryResult: any = null;
+    if (file) {
+      const validation = this.cloudinaryService.validateFile(file);
+      if (!validation.isValid) {
+        throw new BadRequestException(validation.error);
       }
 
-      // 🔍 Cek apakah NIK sudah terdaftar - FIXED: gunakan findFirst untuk field non-unique
-      if (createUserDto.nik) {
-        const existingUserByNik = await this.prisma.user.findFirst({
-          where: { nik: createUserDto.nik },
+      // Upload file ke Cloudinary
+      cloudinaryResult = await this.cloudinaryService.uploadFile(file, 'kk_files');
+      console.log('📁 File KK uploaded to Cloudinary:', cloudinaryResult.url);
+    }
+
+    // 🟢 Validasi dan konversi tanggalLahir
+    let tanggalLahirDate: Date;
+    try {
+      tanggalLahirDate = new Date(createUserDto.tanggalLahir);
+      
+      // Validasi tanggal
+      if (isNaN(tanggalLahirDate.getTime())) {
+        throw new BadRequestException('Format tanggal lahir tidak valid. Gunakan format YYYY-MM-DD, DD.MM.YYYY, atau DD/MM/YYYY');
+      }
+
+      // Validasi usia minimal (contoh: minimal 17 tahun)
+      const today = new Date();
+      const minAgeDate = new Date(today.getFullYear() - 17, today.getMonth(), today.getDate());
+      if (tanggalLahirDate > minAgeDate) {
+        throw new BadRequestException('Usia minimal 17 tahun');
+      }
+
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Format tanggal lahir tidak valid');
+    }
+
+    const user = await this.prisma.user.create({
+      data: {
+        namaLengkap: createUserDto.namaLengkap,
+        nik: createUserDto.nik,
+        tanggalLahir: tanggalLahirDate,
+        tempatLahir: createUserDto.tempatLahir,
+        email: createUserDto.email,
+        nomorTelepon: createUserDto.nomorTelepon,
+        instagram: createUserDto.instagram || null,
+        facebook: createUserDto.facebook || null,
+        alamat: createUserDto.alamat,
+        kota: createUserDto.kota,
+        negara: createUserDto.negara,
+        kodePos: createUserDto.kodePos,
+        rtRw: createUserDto.rtRw,
+        // 🟢 SIMPAN DATA CLOUDINARY
+        kkFile: cloudinaryResult ? cloudinaryResult.url : null,
+        kkFilePublicId: cloudinaryResult ? cloudinaryResult.public_id : null,
+        role: UserRole.USER,
+        isVerified: false,
+      },
+      select: {
+        id: true,
+        namaLengkap: true,
+        email: true,
+        nik: true,
+        nomorTelepon: true,
+        role: true,
+        isVerified: true,
+        kkFile: true,
+        createdAt: true,
+      },
+    });
+
+    // 🟢 NOTIFIKASI KE ADMIN
+    await this.notifyAdminAboutNewRegistration(user, cloudinaryResult !== null);
+
+    return {
+      message: 'Pendaftaran berhasil! Silakan tunggu verifikasi admin.',
+      user,
+    };
+  } catch (error) {
+    console.error('❌ Registration error:', error);
+    
+    // Rollback: Hapus file dari Cloudinary jika upload gagal
+    if (file && error instanceof Error) {
+      try {
+        console.log('🔄 Rollback: Menghapus file dari Cloudinary karena registrasi gagal');
+      } catch (rollbackError) {
+        console.error('Error saat rollback file:', rollbackError);
+      }
+    }
+
+    if (error instanceof ConflictException || error instanceof BadRequestException) {
+      throw error;
+    }
+    throw new BadRequestException('Gagal mendaftar user: ' + error.message);
+  }
+}
+
+  // 🟢 Update user profile dengan Cloudinary
+  async updateProfile(id: number, updateUserDto: UpdateUserDto, file?: Express.Multer.File) {
+    try {
+      // Pastikan user ada
+      const existingUser = await this.prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          nik: true,
+          kkFilePublicId: true
+        }
+      });
+
+      if (!existingUser) {
+        throw new NotFoundException('User tidak ditemukan');
+      }
+
+      // 🔍 Cek jika email diubah dan sudah digunakan user lain
+      if (updateUserDto.email && updateUserDto.email !== existingUser.email) {
+        const emailExists = await this.prisma.user.findUnique({
+          where: { email: updateUserDto.email },
         });
 
-        if (existingUserByNik) {
-          throw new ConflictException('NIK sudah terdaftar.');
+        if (emailExists) {
+          throw new ConflictException('Email sudah digunakan oleh user lain');
         }
       }
 
-      // 🟢 FIX: Validasi dan konversi tanggalLahir
-      let tanggalLahirDate: Date;
-      if (createUserDto.tanggalLahir) {
-        tanggalLahirDate = new Date(createUserDto.tanggalLahir);
+      // 🔍 Cek jika NIK diubah dan sudah digunakan user lain
+      if (updateUserDto.nik && updateUserDto.nik !== existingUser.nik) {
+        const nikExists = await this.prisma.user.findFirst({
+          where: { nik: updateUserDto.nik },
+        });
 
-        // Validasi apakah tanggal valid
+        if (nikExists) {
+          throw new ConflictException('NIK sudah digunakan oleh user lain');
+        }
+      }
+
+      // 🟢 Handle file upload ke Cloudinary jika ada file baru
+      let cloudinaryResult: CloudinaryUploadResult | null = null;
+      if (file) {
+        const validation = this.cloudinaryService.validateFile(file);
+        if (!validation.isValid) {
+          throw new BadRequestException(validation.error);
+        }
+
+        // Update file di Cloudinary (hapus yang lama, upload yang baru)
+        cloudinaryResult = await this.cloudinaryService.updateFile(
+          existingUser.kkFilePublicId || '',
+          file,
+          'kk_files'
+        );
+        console.log('📁 File KK updated in Cloudinary:', cloudinaryResult.url);
+      }
+
+      // Prepare update data
+      const updateData: any = {};
+
+      if (updateUserDto.namaLengkap) updateData.namaLengkap = updateUserDto.namaLengkap;
+      if (updateUserDto.nik) updateData.nik = updateUserDto.nik;
+      if (updateUserDto.tanggalLahir) {
+        const tanggalLahirDate = new Date(updateUserDto.tanggalLahir);
         if (isNaN(tanggalLahirDate.getTime())) {
           throw new BadRequestException('Format tanggal lahir tidak valid. Gunakan format YYYY-MM-DD');
         }
-      } else {
-        throw new BadRequestException('Tanggal lahir harus diisi');
+        updateData.tanggalLahir = tanggalLahirDate;
+      }
+      if (updateUserDto.tempatLahir) updateData.tempatLahir = updateUserDto.tempatLahir;
+      if (updateUserDto.email) updateData.email = updateUserDto.email;
+      if (updateUserDto.nomorTelepon) updateData.nomorTelepon = updateUserDto.nomorTelepon;
+      if (updateUserDto.instagram !== undefined) updateData.instagram = updateUserDto.instagram;
+      if (updateUserDto.facebook !== undefined) updateData.facebook = updateUserDto.facebook;
+      if (updateUserDto.alamat) updateData.alamat = updateUserDto.alamat;
+      if (updateUserDto.kota) updateData.kota = updateUserDto.kota;
+      if (updateUserDto.negara) updateData.negara = updateUserDto.negara;
+      if (updateUserDto.kodePos) updateData.kodePos = updateUserDto.kodePos;
+      if (updateUserDto.rtRw) updateData.rtRw = updateUserDto.rtRw;
+
+      if (updateUserDto.role) {
+        const validRole = this.convertToUserRole(updateUserDto.role);
+        updateData.role = validRole;
       }
 
-      const user = await this.prisma.user.create({
-        data: {
-          namaLengkap: createUserDto.namaLengkap,
-          nik: createUserDto.nik,
-          tanggalLahir: tanggalLahirDate,
-          tempatLahir: createUserDto.tempatLahir,
-          email: createUserDto.email,
-          nomorTelepon: createUserDto.nomorTelepon,
-          instagram: createUserDto.instagram || null,
-          facebook: createUserDto.facebook || null,
-          alamat: createUserDto.alamat,
-          kota: createUserDto.kota,
-          negara: createUserDto.negara,
-          kodePos: createUserDto.kodePos,
-          rtRw: createUserDto.rtRw,
-          kkFile: file ? file.filename : null,
-          role: UserRole.USER, // FIXED: Gunakan enum UserRole.USER 
-          isVerified: false,
-        },
+      // 🟢 Update data Cloudinary jika ada file baru
+      if (file && cloudinaryResult) {
+        updateData.kkFile = cloudinaryResult.url;
+        updateData.kkFilePublicId = cloudinaryResult.public_id;
+      }
+
+      const updatedUser = await this.prisma.user.update({
+        where: { id },
+        data: updateData,
         select: {
           id: true,
           namaLengkap: true,
@@ -116,20 +286,21 @@ export class UsersService {
           nomorTelepon: true,
           role: true,
           isVerified: true,
-          createdAt: true,
+          kkFile: true,
+          updatedAt: true,
         },
       });
 
       return {
-        message: 'Pendaftaran berhasil',
-        user,
+        message: 'Profil berhasil diperbarui',
+        user: updatedUser,
       };
     } catch (error) {
-      if (error instanceof ConflictException) {
+      if (error instanceof NotFoundException || error instanceof ConflictException) {
         throw error;
       }
-      console.error('Error saat register:', error);
-      throw new BadRequestException('Gagal mendaftar user');
+      console.error('Error saat update profil:', error);
+      throw new BadRequestException('Gagal memperbarui profil');
     }
   }
 
@@ -155,6 +326,7 @@ export class UsersService {
         role: true,
         isVerified: true,
         kkFile: true,
+        kkFilePublicId: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -188,102 +360,6 @@ export class UsersService {
     return user;
   }
 
-  // 🟢 Update user profile - FIXED VERSION
-  async updateProfile(id: number, updateUserDto: UpdateUserDto, file?: Express.Multer.File) {
-    try {
-      // Pastikan user ada
-      const existingUser = await this.prisma.user.findUnique({
-        where: { id },
-        select: { id: true, email: true, nik: true }
-      });
-
-      if (!existingUser) {
-        throw new NotFoundException('User tidak ditemukan');
-      }
-
-      // 🔍 Cek jika email diubah dan sudah digunakan user lain
-      if (updateUserDto.email && updateUserDto.email !== existingUser.email) {
-        const emailExists = await this.prisma.user.findUnique({
-          where: { email: updateUserDto.email },
-        });
-
-        if (emailExists) {
-          throw new ConflictException('Email sudah digunakan oleh user lain');
-        }
-      }
-
-      // 🔍 Cek jika NIK diubah dan sudah digunakan user lain - FIXED: gunakan findFirst
-      if (updateUserDto.nik && updateUserDto.nik !== existingUser.nik) {
-        const nikExists = await this.prisma.user.findFirst({
-          where: { nik: updateUserDto.nik },
-        });
-
-        if (nikExists) {
-          throw new ConflictException('NIK sudah digunakan oleh user lain');
-        }
-      }
-
-      // Prepare update data
-      const updateData: any = {};
-
-      if (updateUserDto.namaLengkap) updateData.namaLengkap = updateUserDto.namaLengkap;
-      if (updateUserDto.nik) updateData.nik = updateUserDto.nik;
-      // 🟢 FIX: Validasi dan konversi tanggalLahir untuk update
-      if (updateUserDto.tanggalLahir) {
-        const tanggalLahirDate = new Date(updateUserDto.tanggalLahir);
-        if (isNaN(tanggalLahirDate.getTime())) {
-          throw new BadRequestException('Format tanggal lahir tidak valid. Gunakan format YYYY-MM-DD');
-        }
-        updateData.tanggalLahir = tanggalLahirDate;
-      }
-      if (updateUserDto.tempatLahir) updateData.tempatLahir = updateUserDto.tempatLahir;
-      if (updateUserDto.email) updateData.email = updateUserDto.email;
-      if (updateUserDto.nomorTelepon) updateData.nomorTelepon = updateUserDto.nomorTelepon;
-      if (updateUserDto.instagram !== undefined) updateData.instagram = updateUserDto.instagram;
-      if (updateUserDto.facebook !== undefined) updateData.facebook = updateUserDto.facebook;
-      if (updateUserDto.alamat) updateData.alamat = updateUserDto.alamat;
-      if (updateUserDto.kota) updateData.kota = updateUserDto.kota;
-      if (updateUserDto.negara) updateData.negara = updateUserDto.negara;
-      if (updateUserDto.kodePos) updateData.kodePos = updateUserDto.kodePos;
-      if (updateUserDto.rtRw) updateData.rtRw = updateUserDto.rtRw;
-
-      // FIXED: Handle role dengan enum UserRole
-      if (updateUserDto.role) {
-        const validRole = this.convertToUserRole(updateUserDto.role);
-        updateData.role = validRole;
-      }
-
-      if (file) updateData.kkFile = file.filename;
-
-      const updatedUser = await this.prisma.user.update({
-        where: { id },
-        data: updateData,
-        select: {
-          id: true,
-          namaLengkap: true,
-          email: true,
-          nik: true,
-          nomorTelepon: true,
-          role: true,
-          isVerified: true,
-          kkFile: true,
-          updatedAt: true,
-        },
-      });
-
-      return {
-        message: 'Profil berhasil diperbarui',
-        user: updatedUser,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ConflictException) {
-        throw error;
-      }
-      console.error('Error saat update profil:', error);
-      throw new BadRequestException('Gagal memperbarui profil');
-    }
-  }
-
   // 🟢 Update user verification status
   async updateVerificationStatus(id: number, isVerified: boolean) {
     const user = await this.prisma.user.findUnique({ where: { id } });
@@ -310,9 +386,8 @@ export class UsersService {
     };
   }
 
-  // 🟢 Update user role - FIXED VERSION
+  // 🟢 Update user role
   async updateUserRole(id: number, role: string) {
-    // FIXED: Convert string role ke enum UserRole
     const validRole = this.convertToUserRole(role);
 
     const user = await this.prisma.user.findUnique({ where: { id } });
@@ -323,7 +398,7 @@ export class UsersService {
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
-      data: { role: validRole }, // FIXED: Gunakan enum UserRole
+      data: { role: validRole },
       select: {
         id: true,
         namaLengkap: true,
@@ -339,7 +414,7 @@ export class UsersService {
     };
   }
 
-  // 🗑️ Delete user
+  // 🗑️ Delete user dengan cleanup Cloudinary
   async deleteUser(id: number) {
     const existingUser = await this.prisma.user.findUnique({
       where: { id },
@@ -347,11 +422,23 @@ export class UsersService {
         id: true,
         namaLengkap: true,
         email: true,
+        kkFilePublicId: true,
       },
     });
 
     if (!existingUser) {
       throw new NotFoundException('User tidak ditemukan');
+    }
+
+    // 🟢 Hapus file dari Cloudinary jika ada
+    if (existingUser.kkFilePublicId) {
+      try {
+        await this.cloudinaryService.deleteFile(existingUser.kkFilePublicId);
+        console.log('🗑️ File KK deleted from Cloudinary:', existingUser.kkFilePublicId);
+      } catch (error) {
+        console.error('Error deleting file from Cloudinary:', error);
+        // Lanjutkan delete user meskipun gagal hapus file
+      }
     }
 
     await this.prisma.user.delete({
@@ -364,12 +451,12 @@ export class UsersService {
     };
   }
 
-  // 🟢 Get user statistics - FIXED VERSION
+  // 🟢 Get user statistics
   async getUserStats() {
     const [totalUsers, verifiedUsers, adminUsers] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { isVerified: true } }),
-      this.prisma.user.count({ where: { role: UserRole.ADMIN } }), // FIXED: Gunakan enum
+      this.prisma.user.count({ where: { role: UserRole.ADMIN } }),
     ]);
 
     return {
@@ -381,7 +468,7 @@ export class UsersService {
     };
   }
 
-  // OTP Methods (untuk kompatibilitas dengan auth system)
+  // OTP Methods
   async updateOtp(email: string, otpCode: string, otpExpire: Date) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
@@ -449,7 +536,7 @@ export class UsersService {
     return user;
   }
 
-  // 🟢 Helper method: Convert string role to UserRole enum - NEW METHOD
+  // 🟢 Helper method: Convert string role to UserRole enum
   private convertToUserRole(roleString: string): UserRole {
     const roleMap: { [key: string]: UserRole } = {
       'user': UserRole.USER,
@@ -459,7 +546,7 @@ export class UsersService {
       'superadmin': UserRole.SUPER_ADMIN,
       'treasurer': UserRole.USER,
       'member': UserRole.USER,
-      'relawan': UserRole.USER, // Map 'relawan' ke MEMBER atau buat enum baru jika diperlukan
+      'relawan': UserRole.USER,
     };
 
     const normalizedRole = roleString.toLowerCase().trim();
@@ -474,27 +561,15 @@ export class UsersService {
     return role;
   }
 
-  // 🟢 Additional method: Get users by role dengan enum - NEW METHOD
-  async getUsersByRole(role: UserRole) {
-    return this.prisma.user.findMany({
-      where: { role },
-      select: {
-        id: true,
-        namaLengkap: true,
-        email: true,
-        role: true,
-        isVerified: true,
-        createdAt: true,
-      },
-    });
-  }
+  // 🟢 Notifikasi Admin
+  private async notifyAdminAboutNewRegistration(user: any, hasKKFile: boolean) {
+    try {
+      console.log(`🔔 ADMIN NOTIFICATION: Pendaftar baru - ${user.namaLengkap} (${user.email})`);
+      console.log(`📁 KK File: ${hasKKFile ? 'Tersedia di Cloudinary' : 'Tidak ada'}`);
 
-  // 🟢 Additional method: Get admin count dengan enum - NEW METHOD
-  async getAdminCount(): Promise<number> {
-    return this.prisma.user.count({
-      where: {
-        role: UserRole.ADMIN
-      }
-    });
+      // Implementasi notifikasi ke admin (email, webhook, dll)
+    } catch (error) {
+      console.error('Error sending admin notification:', error);
+    }
   }
 }

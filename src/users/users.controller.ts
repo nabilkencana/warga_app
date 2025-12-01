@@ -13,6 +13,8 @@ import {
   ParseIntPipe,
   BadRequestException,
   NotFoundException,
+  ValidationPipe,
+  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
@@ -45,32 +47,86 @@ export class UsersController {
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['namaLengkap', 'nik', 'tanggalLahir', 'tempatLahir', 'email', 'nomorTelepon', 'alamat', 'kota', 'negara', 'kodePos', 'rtRw'],
       properties: {
-        namaLengkap: { type: 'string' },
-        nik: { type: 'string' },
-        tanggalLahir: { type: 'string' },
-        tempatLahir: { type: 'string' },
-        email: { type: 'string' },
-        nomorTelepon: { type: 'string' },
-        instagram: { type: 'string', nullable: true },
-        facebook: { type: 'string', nullable: true },
-        alamat: { type: 'string' },
-        kota: { type: 'string' },
-        negara: { type: 'string' },
-        kodePos: { type: 'string' },
-        rtRw: { type: 'string' },
+        namaLengkap: {
+          type: 'string',
+          example: 'John Doe'
+        },
+        nik: {
+          type: 'string',
+          example: '3501234567890123',
+          minLength: 16,
+          maxLength: 16
+        },
+        tanggalLahir: {
+          type: 'string',
+          description: 'Format: YYYY-MM-DD, DD.MM.YYYY, atau DD/MM/YYYY',
+          example: '1990-01-15'
+        },
+        tempatLahir: {
+          type: 'string',
+          example: 'Jakarta'
+        },
+        email: {
+          type: 'string',
+          format: 'email',
+          example: 'john@example.com'
+        },
+        nomorTelepon: {
+          type: 'string',
+          example: '+6281234567890'
+        },
+        instagram: {
+          type: 'string',
+          nullable: true,
+          example: '@johndoe'
+        },
+        facebook: {
+          type: 'string',
+          nullable: true,
+          example: 'johndoe'
+        },
+        alamat: {
+          type: 'string',
+          example: 'Jl. Contoh No. 123'
+        },
+        kota: {
+          type: 'string',
+          example: 'Jakarta Selatan'
+        },
+        negara: {
+          type: 'string',
+          example: 'Indonesia'
+        },
+        kodePos: {
+          type: 'string',
+          example: '12345',
+          minLength: 5,
+          maxLength: 5
+        },
+        rtRw: {
+          type: 'string',
+          example: '001/002',
+          pattern: '^[0-9]{3}/[0-9]{3}$'
+        },
         kkFile: {
           type: 'string',
           format: 'binary',
+          nullable: true,
         },
       },
     },
   })
   @UseInterceptors(FileInterceptor('kkFile'))
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async register(
     @Body() createUserDto: CreateUserDto,
     @UploadedFile() kkFile?: Express.Multer.File,
   ) {
+    console.log('📨 Received file:', kkFile?.originalname);
+    console.log('📨 Received DTO:', createUserDto);
+
     return this.usersService.register(createUserDto, kkFile);
   }
 

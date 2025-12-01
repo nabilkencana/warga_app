@@ -93,4 +93,37 @@ export class BillsController {
   updateOverdueBills() {
     return this.billsService.updateOverdueBills();
   }
+  
+  // ✅ ENDPOINT BARU: Generate QRIS
+  @Post(':id/generate-qris')
+  async generateQRIS(@Param('id') id: string) {
+    return this.billsService.generateQRIS(id);
+  }
+
+  // ✅ ENDPOINT BARU: Create pending payment (untuk user)
+  @Post(':id/pending-payment')
+  async createPendingPayment(
+    @Param('id') id: string,
+    @Body() paymentData: {
+      method: string;
+      receiptImage?: string;
+      qrData?: string;
+    },
+  ) {
+    return this.billsService.createPendingPayment(id, paymentData);
+  }
+
+  // ✅ ENDPOINT BARU: Confirm payment (untuk admin)
+  @Post(':id/confirm-payment')
+  @UseGuards(JwtAuthGuard)
+  async confirmPayment(@Param('id') id: string) {
+    return this.billsService.confirmPayment(id);
+  }
+
+  // ✅ ENDPOINT BARU: Get pending payments (untuk admin)
+  @Get('admin/pending-payments')
+  @UseGuards(JwtAuthGuard)
+  async getPendingPayments() {
+    return this.billsService.getPendingPayments();
+  }
 }

@@ -1,143 +1,219 @@
 // src/users/dto/create-user.dto.ts
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsDateString, IsPhoneNumber, IsPostalCode, IsEnum } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsEmail, IsOptional, IsDateString, Matches, Length, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateUserDto {
-    @ApiProperty({ description: 'Nama lengkap user' })
-    @IsNotEmpty()
+    @ApiProperty({ description: 'Nama lengkap sesuai KTP' })
     @IsString()
-    namaLengkap!: string;
+    @Length(3, 100)
+    namaLengkap: string;
 
-    @ApiProperty({ description: 'NIK (Nomor Induk Kependudukan)' })
-    @IsNotEmpty()
+    @ApiProperty({ description: 'Nomor Induk Kependudukan (16 digit)' })
     @IsString()
-    nik!: string;
+    @Length(16, 16)
+    @Matches(/^[0-9]+$/, { message: 'NIK harus berupa angka' })
+    nik: string;
 
-    @ApiProperty({ description: 'Tanggal lahir' })
-    @IsNotEmpty()
-    @IsDateString()
-    tanggalLahir!: string;
+    @ApiProperty({ description: 'Tanggal lahir (format: YYYY-MM-DD)' })
+    @IsString()
+    @Transform(({ value }) => {
+        // Handle berbagai format tanggal
+        if (!value) return value;
+
+        // Format DD.MM.YYYY ke YYYY-MM-DD
+        if (value.includes('.')) {
+            const parts = value.split('.');
+            if (parts.length === 3) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        // Format DD/MM/YYYY ke YYYY-MM-DD
+        if (value.includes('/')) {
+            const parts = value.split('/');
+            if (parts.length === 3) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        return value;
+    })
+    tanggalLahir: string;
 
     @ApiProperty({ description: 'Tempat lahir' })
-    @IsNotEmpty()
     @IsString()
-    tempatLahir!: string;
+    tempatLahir: string;
 
-    @ApiProperty({ description: 'Email user' })
-    @IsNotEmpty()
+    @ApiProperty({ description: 'Alamat email' })
     @IsEmail()
-    email!: string;
+    email: string;
 
     @ApiProperty({ description: 'Nomor telepon' })
-    @IsNotEmpty()
-    @IsPhoneNumber('ID')
-    nomorTelepon!: string;
+    @IsString()
+    nomorTelepon: string;
 
-    @ApiProperty({ description: 'Username Instagram', required: false })
+    @ApiPropertyOptional({ description: 'Username Instagram' })
     @IsOptional()
     @IsString()
     instagram?: string;
 
-    @ApiProperty({ description: 'Username Facebook', required: false })
+    @ApiPropertyOptional({ description: 'Username Facebook' })
     @IsOptional()
     @IsString()
     facebook?: string;
 
     @ApiProperty({ description: 'Alamat lengkap' })
-    @IsNotEmpty()
     @IsString()
-    alamat!: string;
+    alamat: string;
 
     @ApiProperty({ description: 'Kota' })
-    @IsNotEmpty()
     @IsString()
-    kota!: string;
+    kota: string;
 
     @ApiProperty({ description: 'Negara' })
-    @IsNotEmpty()
     @IsString()
-    negara!: string;
+    negara: string;
 
     @ApiProperty({ description: 'Kode pos' })
-    @IsNotEmpty()
-    @IsPostalCode('ID')
-    kodePos!: string;
-
-    @ApiProperty({ description: 'RT/RW' })
-    @IsNotEmpty()
     @IsString()
-    rtRw!: string;
+    @Length(5, 5)
+    @Matches(/^[0-9]+$/, { message: 'Kode pos harus berupa angka' })
+    kodePos: string;
+
+    @ApiProperty({ description: 'RT/RW (format: 001/002)' })
+    @IsString()
+    @Matches(/^[0-9]{3}\/[0-9]{3}$/, { message: 'Format RT/RW harus 001/002' })
+    rtRw: string;
+
+    // 🟢 NEW: KK Notes field
+    @IsString()
+    @IsOptional()
+    kkNotes?: string;
 }
 
 export class UpdateUserDto {
-    @ApiProperty({ description: 'Nama lengkap user', required: false })
+    @ApiPropertyOptional({ description: 'Nama lengkap sesuai KTP' })
     @IsOptional()
     @IsString()
+    @Length(3, 100)
     namaLengkap?: string;
 
-    @ApiProperty({ description: 'NIK (Nomor Induk Kependudukan)', required: false })
+    @ApiPropertyOptional({ description: 'Nomor Induk Kependudukan (16 digit)' })
     @IsOptional()
     @IsString()
+    @Length(16, 16)
+    @Matches(/^[0-9]+$/, { message: 'NIK harus berupa angka' })
     nik?: string;
 
-    @ApiProperty({ description: 'Tanggal lahir', required: false })
+    @ApiPropertyOptional({ description: 'Tanggal lahir (format: YYYY-MM-DD)' })
     @IsOptional()
-    @IsDateString()
+    @IsString()
+    @Transform(({ value }) => {
+        if (!value) return value;
+
+        if (value.includes('.')) {
+            const parts = value.split('.');
+            if (parts.length === 3) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        if (value.includes('/')) {
+            const parts = value.split('/');
+            if (parts.length === 3) {
+                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        return value;
+    })
     tanggalLahir?: string;
 
-    @ApiProperty({ description: 'Tempat lahir', required: false })
+    @ApiPropertyOptional({ description: 'Tempat lahir' })
     @IsOptional()
     @IsString()
     tempatLahir?: string;
 
-    @ApiProperty({ description: 'Email user', required: false })
+    @ApiPropertyOptional({ description: 'Alamat email' })
     @IsOptional()
     @IsEmail()
     email?: string;
 
-    @ApiProperty({ description: 'Nomor telepon', required: false })
+    @ApiPropertyOptional({ description: 'Nomor telepon' })
     @IsOptional()
-    @IsPhoneNumber('ID')
+    @IsString()
     nomorTelepon?: string;
 
-    @ApiProperty({ description: 'Username Instagram', required: false })
+    @ApiPropertyOptional({ description: 'Username Instagram' })
     @IsOptional()
     @IsString()
     instagram?: string;
 
-    @ApiProperty({ description: 'Username Facebook', required: false })
+    @ApiPropertyOptional({ description: 'Username Facebook' })
     @IsOptional()
     @IsString()
     facebook?: string;
 
-    @ApiProperty({ description: 'Alamat lengkap', required: false })
+    @ApiPropertyOptional({ description: 'Alamat lengkap' })
     @IsOptional()
     @IsString()
     alamat?: string;
 
-    @ApiProperty({ description: 'Kota', required: false })
+    @ApiPropertyOptional({ description: 'Kota' })
     @IsOptional()
     @IsString()
     kota?: string;
 
-    @ApiProperty({ description: 'Negara', required: false })
+    @ApiPropertyOptional({ description: 'Negara' })
     @IsOptional()
     @IsString()
     negara?: string;
 
-    @ApiProperty({ description: 'Kode pos', required: false })
-    @IsOptional()
-    @IsPostalCode('ID')
-    kodePos?: string;
-
-    @ApiProperty({ description: 'RT/RW', required: false })
+    @ApiPropertyOptional({ description: 'Kode pos' })
     @IsOptional()
     @IsString()
+    @Length(5, 5)
+    @Matches(/^[0-9]+$/, { message: 'Kode pos harus berupa angka' })
+    kodePos?: string;
+
+    @ApiPropertyOptional({ description: 'RT/RW (format: 001/002)' })
+    @IsOptional()
+    @IsString()
+    @Matches(/^[0-9]{3}\/[0-9]{3}$/, { message: 'Format RT/RW harus 001/002' })
     rtRw?: string;
 
-    @ApiProperty({ description: 'Role user', required: false, enum: ['user', 'admin', 'super_admin'] })
+    @ApiPropertyOptional({ description: 'Role user', enum: ['user', 'admin', 'super_admin'] })
     @IsOptional()
-    @IsEnum(UserRole)
-    role?: UserRole;
+    @IsString()
+    role?: string;
+
+    // 🟢 NEW: KK Notes field
+    @IsString()
+    @IsOptional()
+    kkNotes?: string;
+}
+
+
+// 🟢 NEW: DTO for KK Verification
+export class VerifyKKDto {
+    @IsString()
+    @IsOptional()
+    notes?: string;
+}
+
+export class RejectKKDto {
+    @IsString()
+    @MinLength(10, { message: 'Alasan penolakan minimal 10 karakter' })
+    reason: string;
+
+    @IsString()
+    @IsOptional()
+    notes?: string;
+}
+
+export class SendReminderDto {
+    @IsString()
+    @MinLength(10, { message: 'Pesan minimal 10 karakter' })
+    message: string;
 }

@@ -391,4 +391,255 @@ export class BillsService {
         throw new BadRequestException(`Invalid payment method: ${method}`);
     }
   }
+
+  // ✅ METHOD BARU: Create pending payment (menunggu konfirmasi)
+  async createPendingPayment(
+    billId: string,
+    paymentData: {
+      method: string;
+      receiptImage?: string;
+      qrData?: string;
+    }
+  ): Promise<IBill> {
+    const bill = await this.findOne(billId);
+
+    if (bill.status === BillStatus.PAID) {
+      throw new BadRequestException('Bill already paid');
+    }
+
+    if (bill.status === BillStatus.CANCELLED) {
+      throw new BadRequestException('Cannot pay cancelled bill');
+    }
+
+    // Convert string method to PaymentMethod enum
+    let paymentMethod: PaymentMethod;
+    try {
+      paymentMethod = this.convertToPaymentMethod(paymentData.method);
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+
+    // Create payment record dengan status PENDING
+    const payment = await this.prisma.payment.create({
+      data: {
+        amount: bill.amount,
+        method: paymentMethod,
+        status: PaymentStatus.PENDING, // ✅ Status PENDING, bukan PAID
+        description: `Payment for bill: ${bill.title}`,
+        dueDate: bill.dueDate,
+        paidDate: null, // Belum ada tanggal bayar
+        receiptImage: paymentData.receiptImage,
+        qrCode: paymentData.qrData, // ✅ Simpan QR data
+        userId: bill.userId,
+      },
+    });
+
+    // Update bill status tetap PENDING (belum PAID)
+    const updatedBill = await this.prisma.bill.update({
+      where: { id: billId },
+      data: {
+        status: BillStatus.PENDING, // Tetap PENDING menunggu konfirmasi
+        paymentId: payment.id,
+        paidAt: null, // Belum ada tanggal bayar
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+          },
+        },
+        payment: true,
+      },
+    });
+
+    this.logger.log(`Pending payment created for bill: ${billId}`);
+    return updatedBill as IBill;
+  }
+
+  // ✅ METHOD BARU: Generate QRIS data
+  async generateQRIS(billId: string): Promise<{
+    qrString: string;
+    qrData: any;
+    expiryTime: string;
+    status: string;
+  }> {
+    const bill = await this.findOne(billId);
+
+    // Generate unique QR data
+    const qrData = {
+      billId: bill.id,
+      amount: bill.amount,
+      description: bill.title,
+      merchant: 'Dana Community',
+      timestamp: new Date().getTime(),
+      merchantCity: 'Jakarta',
+      countryCode: 'ID',
+      currency: 'IDR',
+    };
+
+    // Format QRIS string (standard Indonesia)
+    const qrString = this.generateQRISString(qrData);
+
+    return {
+      qrString: qrString,
+      qrData: qrData,
+      expiryTime: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 menit
+      status: 'ACTIVE',
+    };
+  }
+
+  // ✅ METHOD BARU: Generate QRIS string sesuai standard
+  private generateQRISString(qrData: any): string {
+    const { billId, amount, description, merchant, merchantCity, countryCode, currency } = qrData;
+
+    // Format sesuai standard QRIS Indonesia
+    const qrisComponents = [
+      `000201`,
+      `010211`,
+      `26650013ID.OR.GPNQR.W021`,
+      `0106${merchant.substring(0, 6)}`,
+      `0208${billId}`,
+      `0306${description.substring(0, 6)}`,
+      `5303${currency}`,
+      `5406${amount.toFixed(0)}`,
+      `5802ID`,
+      `5906${merchant.substring(0, 6)}`,
+      `6007${merchantCity}`,
+      `6105${countryCode}`,
+      `6207${new Date().getTime()}`,
+      `6304`
+    ];
+
+    let qrString = qrisComponents.join('');
+
+    // Add CRC16 checksum
+    const crc = this.calculateCRC16(qrString);
+    qrString += crc.toString(16).toUpperCase().padStart(4, '0');
+
+    return qrString;
+  }
+
+  // ✅ METHOD BARU: Calculate CRC16 checksum
+  private calculateCRC16(data: string): number {
+    let crc = 0xFFFF;
+    for (let i = 0; i < data.length; i++) {
+      crc ^= data.charCodeAt(i) << 8;
+      for (let j = 0; j < 8; j++) {
+        if (crc & 0x8000) {
+          crc = (crc << 1) ^ 0x1021;
+        } else {
+          crc <<= 1;
+        }
+      }
+    }
+    return crc & 0xFFFF;
+  }
+
+  // ✅ METHOD BARU: Confirm payment (untuk admin)
+  async confirmPayment(billId: string): Promise<IBill> {
+    const bill = await this.findOne(billId);
+
+    if (bill.status === BillStatus.PAID) {
+      throw new BadRequestException('Bill already paid');
+    }
+
+    if (!bill.paymentId) {
+      throw new BadRequestException('No payment record found for this bill');
+    }
+
+    // Update payment status to PAID
+    await this.prisma.payment.update({
+      where: { id: bill.paymentId },
+      data: {
+        status: PaymentStatus.PAID,
+        paidDate: new Date(),
+      },
+    });
+
+    // Update bill status to PAID
+    const updatedBill = await this.prisma.bill.update({
+      where: { id: billId },
+      data: {
+        status: BillStatus.PAID,
+        paidAt: new Date(),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+          },
+        },
+        payment: true,
+      },
+    });
+
+    // Create transaction record for the income
+    await this.prisma.transaction.create({
+      data: {
+        amount: bill.amount,
+        type: 'INCOME',
+        category: 'Iuran',
+        description: `Pembayaran: ${bill.title}`,
+        date: new Date(),
+        createdBy: bill.createdBy,
+        userId: bill.userId,
+        paymentId: bill.paymentId,
+      },
+    });
+
+    this.logger.log(`Payment confirmed for bill: ${billId}`);
+    return updatedBill as IBill;
+  }
+
+  // ✅ METHOD BARU: Get pending payments (untuk admin)
+  async getPendingPayments(): Promise<IBill[]> {
+    const bills = await this.prisma.bill.findMany({
+      where: {
+        status: BillStatus.PENDING,
+        paymentId: { not: null }, // Hanya yang sudah ada payment record
+        payment: {
+          status: PaymentStatus.PENDING,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+            nomorTelepon: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            email: true,
+          },
+        },
+        payment: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return bills as IBill[];
+  }
 }

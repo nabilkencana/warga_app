@@ -28,6 +28,7 @@ model User {
   kodePos                   String
   rtRw                      String
   kkFile                    String?
+  kkFilePublicId            String?               // Public ID Cloudinary untuk management file
   role                      UserRole            @default(USER)
   fotoProfil                String?
   bio                       String?

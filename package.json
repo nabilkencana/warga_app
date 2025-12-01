@@ -38,6 +38,7 @@
     "chartjs-node-canvas": "^5.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "cloudinary": "^2.8.0",
     "dotenv": "^17.2.3",
     "google-auth-library": "^10.5.0",
     "init": "^0.1.2",

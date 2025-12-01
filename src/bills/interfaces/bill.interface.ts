@@ -62,10 +62,23 @@ export interface IBillSummary {
     paidAmount: number;
 }
 
-// Hapus custom enum yang duplicate
-// export enum BillStatus {
-//   PENDING = 'PENDING',
-//   PAID = 'PAID',
-//   OVERDUE = 'OVERDUE',
-//   CANCELLED = 'CANCELLED',
-// }
+export interface IPayment {
+    id: string;
+    amount: number;
+    method: PaymentMethod;
+    status: PaymentStatus;
+    description: string;
+    dueDate: Date;
+    paidDate?: Date;
+    receiptImage?: string;
+    qrData?: string; // ✅ Tambahkan field QR data
+    userId: number;
+    createdAt: Date;
+}
+
+export interface IQRISResponse {
+    qrString: string;
+    qrData: any;
+    expiryTime: string;
+    status: string;
+}
