@@ -22,7 +22,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, VerifyKKDto } from './dto/create-user.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody } from '@nestjs/swagger';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @ApiTags('users')
 @Controller('users')
@@ -275,61 +275,5 @@ export class UsersController {
   }
 
   // 🟢 Upload KK document (untuk user update)
-  async findById(id: number) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        namaLengkap: true,
-        email: true,
-        nik: true,
-        tanggalLahir: true,
-        tempatLahir: true,
-        nomorTelepon: true,
-        instagram: true,
-        facebook: true,
-        alamat: true,
-        kota: true,
-        negara: true,
-        kodePos: true,
-        rtRw: true,
-        role: true,
-        isVerified: true,
-
-        // KK Verification Fields
-        kkFile: true,
-        kkFilePublicId: true,
-        kkRejectionReason: true,
-        kkVerifiedAt: true,
-        kkVerifiedBy: true,
-
-        createdAt: true,
-        updatedAt: true,
-        bio: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User dengan ID ${id} tidak ditemukan`);
-    }
-
-    // Tambahkan KK verification status
-    const userWithKKStatus = {
-      ...user,
-      kkVerificationStatus: this.getKKVerificationStatus(user),
-    };
-
-    return userWithKKStatus;
-  }
-
-  // Helper method untuk menentukan status KK
-  private getKKVerificationStatus(user: any): string {
-    if (user.isVerified) {
-      return 'verified';
-    } else if (user.kkRejectionReason) {
-      return 'rejected';
-    }
-    return 'pending';
-  }
 
 }
