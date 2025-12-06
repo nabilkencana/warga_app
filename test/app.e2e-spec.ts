@@ -8,6 +8,9 @@ describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
+    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+    process.env.JWT_SECRET = 'test-secret';
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
