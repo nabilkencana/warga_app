@@ -34,18 +34,43 @@ export class AuthService {
   }
 
   private validateAndFormatFromField(): string {
-    const fromEmail = this.config.get('RESEND_FROM_EMAIL');
-    const fromName = this.config.get('RESEND_FROM_NAME', 'WargaApp');
+    const emailConfig = this.config.get('RESEND_FROM_EMAIL', '').trim();
+    const fromName = this.config.get('RESEND_FROM_NAME', 'WargaApp').trim();
+
+    if (!emailConfig) {
+      this.logger.error('RESEND_FROM_EMAIL is not configured');
+      throw new InternalServerErrorException('Email configuration missing');
+    }
+
+    // Debug log untuk melihat format asli
+    this.logger.log(`Raw email config: "${emailConfig}"`);
+    this.logger.log(`Raw from name: "${fromName}"`);
+
+    // Ekstrak email dari berbagai format
+    let pureEmail = emailConfig;
+
+    // Jika format: "Name <email@domain.com>", ekstrak bagian emailnya
+    if (emailConfig.includes('<') && emailConfig.includes('>')) {
+      const match = emailConfig.match(/<([^>]+)>/);
+      if (match && match[1]) {
+        pureEmail = match[1].trim();
+        this.logger.log(`Extracted email from brackets: ${pureEmail}`);
+      }
+    }
 
     // Validasi format email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(fromEmail)) {
-      this.logger.error(`Invalid email format in RESEND_FROM_EMAIL: ${fromEmail}`);
-      throw new InternalServerErrorException('Invalid email configuration');
+    if (!emailRegex.test(pureEmail)) {
+      this.logger.error(`Invalid email format after extraction: "${pureEmail}"`);
+      this.logger.error(`Original config: "${emailConfig}"`);
+      throw new InternalServerErrorException(`Invalid email format: ${pureEmail}`);
     }
 
-    // Return format yang valid untuk Resend
-    return `${fromName.trim()} <${fromEmail.trim()}>`;
+    // Format akhir untuk Resend
+    const result = `${fromName} <${pureEmail}>`;
+    this.logger.log(`Final formatted from field: "${result}"`);
+
+    return result;
   }
 
   async sendOtp(email: string) {
