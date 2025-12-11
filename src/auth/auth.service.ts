@@ -111,46 +111,206 @@ export class AuthService {
           subject: '🔐 Kode OTP untuk Login - WargaApp',
           html: `
             <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="utf-8">
-              <style>
-                body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; }
-                .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; color: white; }
-                .content { padding: 30px; }
-                .otp-code { font-size: 32px; font-weight: bold; color: #667eea; text-align: center; letter-spacing: 8px; margin: 20px 0; }
-                .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #6c757d; font-size: 12px; }
-                .warning { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 12px; margin: 20px 0; }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <div class="header">
-                  <h1>🔐 WargaApp</h1>
-                  <p>Kode Verifikasi Login Anda</p>
-                </div>
-                <div class="content">
-                  <h2>Halo!</h2>
-                  <p>Anda baru saja meminta kode OTP untuk login ke akun WargaApp. Gunakan kode berikut:</p>
-                  
-                  <div class="otp-code">${otp}</div>
-                  
-                  <div class="warning">
-                    <strong>⏰ Masa Berlaku:</strong> 5 menit<br>
-                    <br>  
-                    <strong>🔒 Jangan bagikan kode ini kepada siapapun!</strong>
-                  </div>
-                  
-                  <p>Jika Anda tidak meminta kode ini, silakan abaikan email ini.</p>
-                </div>
-                <div class="footer">
-                  <p>&copy; 2024 WargaApp. All rights reserved.</p>
-                  <p>Email ini dikirim secara otomatis, mohon tidak membalas.</p>
-                </div>
-              </div>
-            </body>
-            </html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f7fa;
+      line-height: 1.6;
+      color: #333;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 82, 204, 0.08);
+      border: 1px solid #e6f0ff;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #0066cc 0%, #004d99 100%);
+      padding: 32px 20px;
+      text-align: center;
+      color: white;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .header p {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 16px;
+    }
+
+    .content {
+      padding: 40px 32px;
+    }
+
+    .greeting {
+      color: #004d99;
+      margin-bottom: 24px;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .message {
+      color: #4d4d4d;
+      margin-bottom: 32px;
+      font-size: 16px;
+    }
+
+    .otp-container {
+      background: #f0f7ff;
+      border: 1px solid #cce0ff;
+      border-radius: 10px;
+      padding: 24px;
+      margin: 32px 0;
+      text-align: center;
+    }
+
+    .otp-label {
+      color: #0066cc;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .otp-code {
+      font-size: 40px;
+      font-weight: 700;
+      color: #004d99;
+      letter-spacing: 8px;
+      margin: 0;
+      font-family: 'Courier New', monospace;
+      padding: 8px 0;
+    }
+
+    .info-box {
+      background: #e6f2ff;
+      border-left: 4px solid #0066cc;
+      padding: 16px 20px;
+      margin: 32px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .info-title {
+      color: #004d99;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    .info-text {
+      color: #4d4d4d;
+      margin: 4px 0;
+      font-size: 14px;
+    }
+
+    .warning {
+      color: #cc3300;
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    .footer {
+      background: #f5f7fa;
+      padding: 24px 32px;
+      text-align: center;
+      color: #666;
+      font-size: 13px;
+      border-top: 1px solid #e6e6e6;
+    }
+
+    .footer p {
+      margin: 8px 0;
+    }
+
+    .copyright {
+      font-size: 12px;
+      color: #999;
+      margin-top: 16px;
+    }
+
+    .highlight {
+      color: #0066cc;
+      font-weight: 600;
+    }
+
+    @media (max-width: 480px) {
+      .content {
+        padding: 24px 20px;
+      }
+
+      .header {
+        padding: 24px 20px;
+      }
+
+      .otp-code {
+        font-size: 32px;
+        letter-spacing: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🔐 WargaApp</div>
+      <p>Kode Verifikasi Login</p>
+    </div>
+
+    <div class="content">
+      <div class="greeting">Halo!</div>
+
+      <div class="message">
+        Anda baru saja meminta kode OTP untuk login ke akun WargaApp.
+        Gunakan kode berikut untuk melanjutkan:
+      </div>
+
+      <div class="otp-container">
+        <div class="otp-label">Kode OTP Anda</div>
+        <div class="otp-code">${otp}</div>
+      </div>
+      
+      <div class="info-box">
+        <div class="info-title">⏰ Informasi Penting</div>
+        <p class="info-text"><span class="highlight">Masa Berlaku:</span> 5 menit</p>
+        <p class="info-text"><span class="highlight">Jangan bagikan</span> kode ini kepada siapapun</p>
+        <p class="warning">Termasuk staf WargaApp yang tidak akan pernah memintanya</p>
+      </div>
+      
+      <div class="message" style="font-size: 14px; color: #666; margin-top: 32px;">
+        Jika Anda tidak meminta kode ini, silakan abaikan email ini atau 
+        hubungi tim dukungan kami jika merasa ada aktivitas mencurigakan.
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p><span class="highlight">WargaApp</span> — Platform digital untuk warga</p>
+      <p>Email ini dikirim secara otomatis, mohon tidak membalas</p>
+      <div class="copyright">
+        &copy; 2024 WargaApp. Hak cipta dilindungi undang-undang.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
           `,
           text: `Kode OTP Anda: ${otp}. Berlaku selama 5 menit. Jangan bagikan kode ini kepada siapapun.`
         });
