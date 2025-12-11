@@ -1,16 +1,17 @@
 import { Injectable, UnauthorizedException, InternalServerErrorException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { OAuth2Client } from 'google-auth-library';
 import { UserRole } from '@prisma/client';
+import { Resend } from 'resend'; // Import Resend[citation:2][citation:6]
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private googleClient: OAuth2Client;
+  private resend: Resend; // Instance Resend
 
   constructor(
     private readonly usersService: UsersService,
@@ -22,6 +23,9 @@ export class AuthService {
       this.config.get('GOOGLE_CLIENT_ID'),
       this.config.get('GOOGLE_CLIENT_SECRET')
     );
+
+    // Inisialisasi Resend client
+    this.resend = new Resend(this.config.get('RESEND_API_KEY'));
   }
 
   async sendOtp(email: string) {
@@ -51,67 +55,63 @@ export class AuthService {
       this.logger.log(`OTP generated for ${email}: ${otp}`);
 
       try {
-        const transporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: {
-            user: this.config.get('EMAIL_USER'),
-            pass: this.config.get('EMAIL_PASS'),
-          },
-        });
-
-        await transporter.sendMail({
-          from: `"WargaApp" <${this.config.get('EMAIL_USER')}>`,
+        // Menggunakan Resend untuk mengirim email[citation:2][citation:6]
+        const { data, error } = await this.resend.emails.send({
+          from: `${this.config.get('RESEND_FROM_NAME')} <${this.config.get('RESEND_FROM_EMAIL')}>`,
           to: email,
           subject: '🔐 Kode OTP untuk Login - WargaApp',
           html: `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; color: white; }
-        .content { padding: 30px; }
-        .otp-code { font-size: 32px; font-weight: bold; color: #667eea; text-align: center; letter-spacing: 8px; margin: 20px 0; }
-        .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #6c757d; font-size: 12px; }
-        .warning { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 12px; margin: 20px 0; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>🔐 WargaApp</h1>
-          <p>Kode Verifikasi Login Anda</p>
-        </div>
-        <div class="content">
-          <h2>Halo!</h2>
-          <p>Anda baru saja meminta kode OTP untuk login ke akun WargaApp. Gunakan kode berikut:</p>
-          
-          <div class="otp-code">${otp}</div>
-          
-          <div class="warning">
-            <strong>⏰ Masa Berlaku:</strong> 5 menit<br>
-            <br>  
-            <strong>🔒 Jangan bagikan kode ini kepada siapapun!</strong>
-          </div>
-          
-          <p>Jika Anda tidak meminta kode ini, silakan abaikan email ini.</p>
-        </div>
-        <div class="footer">
-          <p>&copy; 2024 WargaApp. All rights reserved.</p>
-          <p>Email ini dikirim secara otomatis, mohon tidak membalas.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `,
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; }
+                .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; color: white; }
+                .content { padding: 30px; }
+                .otp-code { font-size: 32px; font-weight: bold; color: #667eea; text-align: center; letter-spacing: 8px; margin: 20px 0; }
+                .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #6c757d; font-size: 12px; }
+                .warning { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 12px; margin: 20px 0; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🔐 WargaApp</h1>
+                  <p>Kode Verifikasi Login Anda</p>
+                </div>
+                <div class="content">
+                  <h2>Halo!</h2>
+                  <p>Anda baru saja meminta kode OTP untuk login ke akun WargaApp. Gunakan kode berikut:</p>
+                  
+                  <div class="otp-code">${otp}</div>
+                  
+                  <div class="warning">
+                    <strong>⏰ Masa Berlaku:</strong> 5 menit<br>
+                    <br>  
+                    <strong>🔒 Jangan bagikan kode ini kepada siapapun!</strong>
+                  </div>
+                  
+                  <p>Jika Anda tidak meminta kode ini, silakan abaikan email ini.</p>
+                </div>
+                <div class="footer">
+                  <p>&copy; 2024 WargaApp. All rights reserved.</p>
+                  <p>Email ini dikirim secara otomatis, mohon tidak membalas.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `,
           text: `Kode OTP Anda: ${otp}. Berlaku selama 5 menit. Jangan bagikan kode ini kepada siapapun.`
         });
 
-        this.logger.log(`OTP email sent successfully to: ${email}`);
+        if (error) {
+          this.logger.error(`Resend API error for ${email}:`, error);
+          throw new InternalServerErrorException('Gagal mengirim OTP via email');
+        }
+
+        this.logger.log(`OTP email sent successfully to: ${email}. Email ID: ${data?.id}`);
         return { message: 'OTP berhasil dikirim ke email, Cek folder spam' };
 
       } catch (emailError) {
