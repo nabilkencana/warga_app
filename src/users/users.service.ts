@@ -576,6 +576,7 @@ export class UsersService {
       'treasurer': UserRole.USER,
       'member': UserRole.USER,
       'relawan': UserRole.USER,
+      'satpam' : UserRole.SATPAM,
     };
 
     const normalizedRole = roleString.toLowerCase().trim();

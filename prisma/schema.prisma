@@ -82,13 +82,18 @@ model User {
   verifiedKKUsers                                                              User[]             @relation("AdminVerifiedUsers")
   verifiedByAdmin                                                              User?              @relation("AdminVerifiedUsers", fields: [kkVerifiedBy], references: [id])
 
+  // New relation for SATPAM role - emergency responses
+  satpamEmergencyResponses                                                     EmergencyResponse[]
+
   @@map("users")
+  securities Security[]
 }
 
 enum UserRole {
   SUPER_ADMIN
   ADMIN
   USER
+  SATPAM  // Role baru untuk Satpam
 }
 
 // === NOTIFICATION SYSTEM ===
@@ -373,6 +378,7 @@ model Report {
   user                                                            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// Tambahkan field di Emergency untuk tracking SATPAM
 model Emergency {
   id              Int                 @id @default(autoincrement())
   type            String
@@ -386,6 +392,13 @@ model Emergency {
   severity        EmergencySeverity   @default(MEDIUM)
   alarmSent       Boolean             @default(false)
   alarmSentAt     DateTime?
+  
+  // Tambahan untuk SATPAM
+  needSatpam      Boolean             @default(true) // Defaultnya butuh SATPAM
+  satpamAssigned  Boolean             @default(false) // Apakah sudah ada SATPAM yang ditugaskan
+  satpamAlertSent Boolean             @default(false) // Apakah alarm sudah dikirim ke SATPAM
+  satpamAlertSentAt DateTime?         // Kapan alarm dikirim ke SATPAM
+  
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   userId          Int?
@@ -398,6 +411,8 @@ model Emergency {
   @@index([severity])
   @@index([alarmSent])
   @@index([status, createdAt])
+  @@index([needSatpam])
+  @@index([satpamAssigned])
 }
 
 // Tambahkan enum EmergencySeverity setelah SecurityAction
@@ -468,17 +483,21 @@ model Security {
   shift                                                        SecurityShift        @default(MORNING)
   status                                                       SecurityStatus       @default(ACTIVE)
   isOnDuty                                                     Boolean              @default(false)
-  currentLocation String?           // Tambahkan ini
+  currentLocation                                              String?
   currentLatitude                                              String?
   currentLongitude                                             String?
   lastActiveAt                                                 DateTime?
-  deviceToken     String?           // Untuk push notification
+  deviceToken                                                  String?           // Untuk push notification
   emergencyCount                                               Int                  @default(0) // Jumlah emergency yang ditangani
-
+  
+  // Link ke User untuk SATPAM
+  userId                                                       Int?              @unique // Link ke User untuk role SATPAM
+  
   //                                                           Relations
   emergencyResponses                                           EmergencyResponse[]
   securityLogs                                                 SecurityLog[]
   notifications                                                Notification[]      @relation("SecurityNotifications")
+  user                                                         User?              @relation(fields: [userId], references: [id]) // Relation ke User
 
   createdAt                                                    DateTime             @default(now())
   updatedAt                                                    DateTime             @updatedAt
@@ -487,6 +506,7 @@ model Security {
   @@index([shift])
   @@index([status])
   @@index([isOnDuty])
+  @@index([userId])
 }
 
 enum SecurityShift {
@@ -506,15 +526,22 @@ enum SecurityStatus {
 model EmergencyResponse {
   id                                               Int             @id @default(autoincrement())
   emergencyId                                      Int
-  securityId                                       Int
-  responseTime    Int               // Dalam detik
+  securityId                                       Int?
+  satpamId           Int?             // ID User dengan role SATPAM
+  responseTime                                      Int               // Dalam detik
   status                                           ResponseStatus  @default(DISPATCHED)
   actionTaken                                      String?
   notes                                            String?
+  
+  // Status khusus untuk SATPAM
+  satpamStatus                                     SatpamResponseStatus? @default(PENDING) // Status respon dari SATPAM
+  satpamArrivedAt                                  DateTime?
+  satpamCompletedAt                                DateTime?
 
   //                                               Relations
   emergency                                        Emergency      @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
-  security                                         Security       @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  security                                         Security?      @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  satpamUser                                       User?          @relation(fields: [satpamId], references: [id], onDelete: Cascade) // Relation ke User dengan role SATPAM
 
   arrivedAt                                        DateTime?
   completedAt                                      DateTime?
@@ -522,7 +549,20 @@ model EmergencyResponse {
   updatedAt                                        DateTime        @updatedAt
 
   @@map("emergency_responses")
-  @@unique([emergencyId,                           securityId])
+  @@unique([emergencyId, securityId])
+  @@unique([emergencyId, satpamId])
+  @@index([satpamId])
+  @@index([satpamStatus])
+}
+
+// Status khusus untuk respons SATPAM
+enum SatpamResponseStatus {
+  PENDING      // Menunggu konfirmasi
+  ACCEPTED     // Diterima dan sedang menuju lokasi
+  REJECTED     // Ditolak (karena sedang menangani kasus lain, dll)
+  ARRIVED      // Telah tiba di lokasi
+  HANDLING     // Sedang menangani
+  RESOLVED     // Selesai menangani
 }
 
 enum ResponseStatus {
