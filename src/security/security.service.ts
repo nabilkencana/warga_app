@@ -5,15 +5,15 @@ import { EmergencyService } from '../emergency/emergency.service';
 
 @Injectable()
 export class SecurityService {
-    constructor(private prisma: PrismaService) {}
+    constructor(private prisma: PrismaService) { }
 
     // Get dashboard data for security
     async getDashboardData(securityId: number) {
         const [emergencies, assignedEmergencies, stats, securityInfo] = await Promise.all([
             this.prisma.emergency.findMany({
-                where: { 
+                where: {
                     status: 'ACTIVE',
-                    alarmSent: true 
+                    alarmSent: true
                 },
                 include: {
                     emergencyResponses: {
@@ -25,19 +25,26 @@ export class SecurityService {
                 take: 10
             }),
             this.prisma.emergencyResponse.count({
-                where: { 
+                where: {
                     securityId,
-                    status: { in: ['DISPATCHED', 'EN_ROUTE', 'ARRIVED'] }
+                    status: { in: ['DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'HANDLING'] }
                 }
             }),
             this.getSecurityStats(securityId),
-            this.prisma.security.findUnique({
+            // PERBAIKAN: Gunakan nama tabel yang benar
+            this.prisma.security_personnel.findUnique({
                 where: { id: securityId },
                 select: {
+                    id: true,
                     nama: true,
                     shift: true,
                     isOnDuty: true,
-                    emergencyCount: true
+                    emergencyCount: true,
+                    email: true,
+                    nomorTelepon: true,
+                    status: true,
+                    createdAt: true,
+                    updatedAt: true
                 }
             })
         ]);
@@ -51,9 +58,9 @@ export class SecurityService {
         };
     }
 
-    // Security check in
+    // Security check in - PERBAIKAN
     async checkIn(securityId: number, location?: string) {
-        const security = await this.prisma.security.update({
+        const security = await this.prisma.security_personnel.update({
             where: { id: securityId },
             data: {
                 isOnDuty: true,
@@ -76,9 +83,9 @@ export class SecurityService {
         return security;
     }
 
-    // Security check out
+    // Security check out - PERBAIKAN
     async checkOut(securityId: number) {
-        const security = await this.prisma.security.update({
+        const security = await this.prisma.security_personnel.update({
             where: { id: securityId },
             data: {
                 isOnDuty: false,
@@ -99,9 +106,9 @@ export class SecurityService {
         return security;
     }
 
-    // Update security location
+    // Update security location - PERBAIKAN
     async updateLocation(securityId: number, latitude: string, longitude: string) {
-        const security = await this.prisma.security.update({
+        const security = await this.prisma.security_personnel.update({
             where: { id: securityId },
             data: {
                 currentLatitude: latitude,
@@ -153,46 +160,55 @@ export class SecurityService {
         }));
     }
 
-    // Security accept emergency
-    async acceptEmergency(securityId: number, emergencyId: number) {
-        const emergencyService = new EmergencyService(this.prisma);
-        return emergencyService.acceptEmergency(securityId, emergencyId);
-    }
-
-    // Security arrive at emergency
-    async arriveAtEmergency(securityId: number, emergencyId: number) {
-        const emergencyService = new EmergencyService(this.prisma);
-        return emergencyService.arriveAtEmergency(securityId, emergencyId);
-    }
-
-    // Security complete emergency
-    async completeEmergency(securityId: number, emergencyId: number, actionTaken: string, notes?: string) {
-        const emergencyService = new EmergencyService(this.prisma);
-        return emergencyService.completeEmergency(securityId, emergencyId, actionTaken, notes);
-    }
-
-    // Get security statistics
+    // Get security statistics - PERBAIKAN
     async getSecurityStats(securityId?: number) {
-        const emergencyService = new EmergencyService(this.prisma);
-        return emergencyService.getSecurityStats(securityId);
+        const whereClause = securityId ? { securityId } : {};
+
+        const [totalResponses, completedResponses, avgResponseTime] = await Promise.all([
+            this.prisma.emergencyResponse.count({
+                where: whereClause
+            }),
+            this.prisma.emergencyResponse.count({
+                where: {
+                    ...whereClause,
+                    status: 'RESOLVED'
+                }
+            }),
+            this.prisma.emergencyResponse.aggregate({
+                where: {
+                    ...whereClause,
+                    responseTime: { gt: 0 }
+                },
+                _avg: {
+                    responseTime: true
+                }
+            })
+        ]);
+
+        return {
+            totalResponses,
+            completedResponses,
+            completionRate: totalResponses > 0 ? (completedResponses / totalResponses * 100).toFixed(2) : '0.00',
+            avgResponseTime: Math.round(avgResponseTime._avg.responseTime || 0)
+        };
     }
 
-    // Get all securities
+    // Get all securities - PERBAIKAN
     async getAllSecurities() {
-        return this.prisma.security.findMany({
+        return this.prisma.security_personnel.findMany({
             orderBy: { createdAt: 'desc' }
         });
     }
 
-    // Create new security
+    // Create new security - PERBAIKAN
     async createSecurity(data: {
         nama: string;
         nik: string;
         email: string;
         nomorTelepon: string;
-        shift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FLEXIBLE'; // Gunakan tipe literal
+        shift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FLEXIBLE';
     }) {
-        return this.prisma.security.create({
+        return this.prisma.security_personnel.create({
             data: {
                 nama: data.nama,
                 nik: data.nik,
@@ -206,31 +222,31 @@ export class SecurityService {
         });
     }
 
-    // Update security
+    // Update security - PERBAIKAN
     async updateSecurity(id: number, data: {
         nama?: string;
         email?: string;
         nomorTelepon?: string;
-        shift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FLEXIBLE'; // Gunakan tipe literal
-        status?: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'SUSPENDED'; // Gunakan tipe literal
+        shift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FLEXIBLE';
+        status?: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'SUSPENDED';
     }) {
         const updateData: any = {};
-        
+
         if (data.nama) updateData.nama = data.nama;
         if (data.email) updateData.email = data.email;
         if (data.nomorTelepon) updateData.nomorTelepon = data.nomorTelepon;
         if (data.shift) updateData.shift = data.shift;
         if (data.status) updateData.status = data.status;
 
-        return this.prisma.security.update({
+        return this.prisma.security_personnel.update({
             where: { id },
             data: updateData
         });
     }
 
-    // Delete security
+    // Delete security - PERBAIKAN
     async deleteSecurity(id: number) {
-        return this.prisma.security.delete({
+        return this.prisma.security_personnel.delete({
             where: { id }
         });
     }
@@ -238,7 +254,7 @@ export class SecurityService {
     // Get security logs
     async getSecurityLogs(securityId?: number) {
         const whereClause = securityId ? { securityId } : {};
-        
+
         return this.prisma.securityLog.findMany({
             where: whereClause,
             include: {
@@ -254,9 +270,9 @@ export class SecurityService {
         });
     }
 
-    // Get active securities on duty
+    // Get active securities on duty - PERBAIKAN
     async getActiveSecurities() {
-        return this.prisma.security.findMany({
+        return this.prisma.security_personnel.findMany({
             where: {
                 isOnDuty: true,
                 status: 'ACTIVE'
@@ -274,9 +290,13 @@ export class SecurityService {
         });
     }
 
-    // Get security by ID
+    // Get security by ID - PERBAIKAN BESAR
     async getSecurityById(id: number) {
-        return this.prisma.security.findUnique({
+        if (!id) {
+            throw new Error('ID is required');
+        }
+
+        return this.prisma.security_personnel.findUnique({
             where: { id },
             include: {
                 emergencyResponses: {
@@ -295,17 +315,17 @@ export class SecurityService {
         });
     }
 
-    // Update device token for push notifications
+    // Update device token for push notifications - PERBAIKAN
     async updateDeviceToken(securityId: number, deviceToken: string) {
-        return this.prisma.security.update({
+        return this.prisma.security_personnel.update({
             where: { id: securityId },
             data: { deviceToken }
         });
     }
 
-    // Start patrol
+    // Start patrol - PERBAIKAN
     async startPatrol(securityId: number, location?: string) {
-        const security = await this.prisma.security.update({
+        const security = await this.prisma.security_personnel.update({
             where: { id: securityId },
             data: {
                 isOnDuty: true,
@@ -327,9 +347,9 @@ export class SecurityService {
         return security;
     }
 
-    // End patrol
+    // End patrol - PERBAIKAN
     async endPatrol(securityId: number) {
-        const security = await this.prisma.security.update({
+        const security = await this.prisma.security_personnel.update({
             where: { id: securityId },
             data: {
                 isOnDuty: false,
@@ -404,19 +424,46 @@ export class SecurityService {
         const totalResponses = responses.length;
         const completedResponses = responses.filter(r => r.status === 'RESOLVED').length;
         const avgResponseTime = responses.reduce((sum, r) => sum + (r.responseTime || 0), 0) / totalResponses;
-        const avgResolutionTime = responses
-            .filter(r => r.arrivedAt && r.completedAt)
-            .reduce((sum, r) => {
+
+        const resolvedResponses = responses.filter(r => r.arrivedAt && r.completedAt && r.status === 'RESOLVED');
+        const avgResolutionTime = resolvedResponses.length > 0
+            ? resolvedResponses.reduce((sum, r) => {
                 const resolutionTime = (r.completedAt!.getTime() - r.arrivedAt!.getTime()) / 1000;
                 return sum + resolutionTime;
-            }, 0) / completedResponses;
+            }, 0) / resolvedResponses.length
+            : 0;
 
         return {
             totalResponses,
             completedResponses,
             completionRate: totalResponses > 0 ? (completedResponses / totalResponses * 100).toFixed(2) : '0.00',
             avgResponseTime: Math.round(avgResponseTime),
-            avgResolutionTime: Math.round(avgResolutionTime || 0)
+            avgResolutionTime: Math.round(avgResolutionTime)
         };
+    }
+
+    // Accept emergency (simplified version)
+    async acceptEmergency(securityId: number, emergencyId: number) {
+        // Check if already assigned
+        const existingResponse = await this.prisma.emergencyResponse.findFirst({
+            where: {
+                securityId,
+                emergencyId
+            }
+        });
+
+        if (existingResponse) {
+            throw new Error('Already assigned to this emergency');
+        }
+
+        // Create new response
+        return this.prisma.emergencyResponse.create({
+            data: {
+                securityId,
+                emergencyId,
+                status: 'DISPATCHED',
+                responseTime: 0
+            }
+        });
     }
 }

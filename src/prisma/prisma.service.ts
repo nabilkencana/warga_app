@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   activityParticipation: any;
   donation: any;
+    security_personnel: any;
   constructor() {
     super({
       log: ['query', 'info', 'warn', 'error'],
