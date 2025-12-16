@@ -1,5 +1,5 @@
 // src/security/security.controller.ts
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, NotFoundException } from '@nestjs/common';
 import { SecurityService } from './security.service';
 
 @Controller('security')
@@ -238,5 +238,148 @@ export class SecurityController {
             message: 'Security found',
             data: security
         };
+    }
+
+    // === ENDPOINTS BERBASIS USER ID ===
+
+
+    @Post('patrol/start/user')
+    async startPatrolByUser(@Body() data: { userId: number; location?: string }) {
+        return this.securityService.startPatrolByUserId(data.userId, data.location);
+    }
+
+    @Post('patrol/end/user')
+    async endPatrolByUser(@Body() data: { userId: number }) {
+        return this.securityService.endPatrolByUserId(data.userId);
+    }
+
+    @Get('logs/user/:userId')
+    async getSecurityLogsByUser(@Param('userId') userId: string) {
+        return this.securityService.getSecurityLogsByUserId(parseInt(userId));
+    }
+
+    @Get('emergencies/user/:userId')
+    async getAssignedEmergenciesByUser(@Param('userId') userId: string) {
+        return this.securityService.getAssignedEmergenciesByUserId(parseInt(userId));
+    }
+
+    @Post('emergency/accept/user')
+    async acceptEmergencyByUser(@Body() data: { userId: number; emergencyId: number }) {
+        return this.securityService.acceptEmergencyByUserId(data.userId, data.emergencyId);
+    }
+
+    @Post('emergency/arrive/user')
+    async arriveAtEmergencyByUser(@Body() data: { userId: number; emergencyId: number }) {
+        return this.securityService.arriveAtEmergencyByUserId(data.userId, data.emergencyId);
+    }
+
+    @Post('emergency/complete/user')
+    async completeEmergencyByUser(@Body() data: {
+        userId: number;
+        emergencyId: number;
+        actionTaken: string;
+        notes?: string;
+    }) {
+        return this.securityService.completeEmergencyByUserId(
+            data.userId,
+            data.emergencyId,
+            data.actionTaken,
+            data.notes
+        );
+    }
+
+    @Get('responses/user/:userId')
+    async getEmergencyResponsesByUser(@Param('userId') userId: string) {
+        return this.securityService.getEmergencyResponsesByUserId(parseInt(userId));
+    }
+
+    @Get('performance/user/:userId')
+    async getPerformanceMetricsByUser(@Param('userId') userId: string) {
+        return this.securityService.getPerformanceMetricsByUserId(parseInt(userId));
+    }
+
+    @Post('incident/report/user')
+    async reportIncidentByUser(@Body() data: {
+        userId: number;
+        details: string;
+        location?: string;
+        latitude?: string;
+        longitude?: string;
+    }) {
+        return this.securityService.reportIncidentByUserId(data.userId, {
+            details: data.details,
+            location: data.location,
+            latitude: data.latitude,
+            longitude: data.longitude
+        });
+    }
+
+    @Post('device-token/user')
+    async updateDeviceTokenByUser(@Body() data: { userId: number; deviceToken: string }) {
+        return this.securityService.updateDeviceTokenByUserId(data.userId, data.deviceToken);
+    }
+
+    @Get('user/:userId')
+    async getSecurityByUser(@Param('userId') userId: string) {
+        return this.securityService.getSecurityByUserId(parseInt(userId));
+    }
+
+
+    // Endpoint untuk user-based operations
+    @Get('dashboard/user/:userId')
+    async getUserSecurityDashboard(@Param('userId') userId: string) {
+        return this.securityService.getDashboardDataByUserId(parseInt(userId));
+    }
+
+    @Post('check-in/user')
+    async checkInByUser(@Body() data: { userId: number; location?: string }) {
+        return this.securityService.checkInByUserId(data.userId, data.location);
+    }
+
+    @Post('check-out/user')
+    async checkOutByUser(@Body() data: { userId: number }) {
+        return this.securityService.checkOutByUserId(data.userId);
+    }
+
+    @Post('update-location/user')
+    async updateLocationByUser(@Body() data: {
+        userId: number;
+        latitude: string;
+        longitude: string;
+    }) {
+        return this.securityService.updateLocationByUserId(data.userId, data.latitude, data.longitude);
+    }
+
+    // Helper untuk konversi User ID ke Security ID
+    @Get('user-to-security/:userId')
+    async getUserToSecurity(@Param('userId') userId: string) {
+        console.log(`[DEBUG] getUserToSecurity called with userId: ${userId}`);
+        console.log(`[DEBUG] this.securityService:`, this.securityService);
+
+        try {
+            if (!this.securityService) {
+                throw new Error('SecurityService is not injected');
+            }
+
+            const security = await this.securityService.getOrCreateSecurityForUser(parseInt(userId), {});
+
+            return {
+                success: true,
+                message: 'Security record found/created',
+                data: {
+                    userId: parseInt(userId),
+                    securityId: security.id,
+                    security: security
+                }
+            };
+        } catch (error) {
+            console.error('[ERROR] getUserToSecurity error:', error);
+            return {
+                success: false,
+                message: error.message,
+                error: error.toString(),
+                stack: error.stack
+            };
+        }
     }
 }

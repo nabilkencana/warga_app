@@ -844,9 +844,242 @@ export class SecurityService {
         }
     }
 
+    // === METHODS BERBASIS USER ID ===
+
+    // Get security ID from user ID
+    async getSecurityIdFromUserId(userId: number): Promise<number> {
+        const security = await this.prisma.security.findFirst({
+            where: { userId }
+        });
+
+        if (!security) {
+            throw new NotFoundException(`Security record untuk user ID ${userId} tidak ditemukan`);
+        }
+
+        return security.id;
+    }
+
+
+    // Update location by User ID
+    async updateLocationByUserId(userId: number, latitude: string, longitude: string) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.updateLocation(security.id, latitude, longitude);
+    }
+
+
+    // Start patrol by User ID
+    async startPatrolByUserId(userId: number, location?: string) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.startPatrol(security.id, location);
+    }
+
+
+    // End patrol by User ID
+    async endPatrolByUserId(userId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.endPatrol(security.id);
+    }
+
+
+    // Get security logs by User ID
+    async getSecurityLogsByUserId(userId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.getSecurityLogs(security.id);
+    }
+    
+    // Get assigned emergencies by User ID
+    async getAssignedEmergenciesByUserId(userId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.getAssignedEmergencies(security.id);
+    }
+
+
+    // Accept emergency by User ID
+    async acceptEmergencyByUserId(userId: number, emergencyId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.acceptEmergency(security.id, emergencyId);
+    }
+
+    // Arrive at emergency by User ID
+    async arriveAtEmergencyByUserId(userId: number, emergencyId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.arriveAtEmergency(security.id, emergencyId);
+    }
+
+    // Complete emergency by User ID
+    async completeEmergencyByUserId(
+        userId: number,
+        emergencyId: number,
+        actionTaken: string,
+        notes?: string
+    ) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.completeEmergency(security.id, emergencyId, actionTaken, notes);
+    }
+
+    // Get emergency responses by User ID
+    async getEmergencyResponsesByUserId(userId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.getEmergencyResponses(security.id);
+    }
+
+
+    // Get performance metrics by User ID
+    async getPerformanceMetricsByUserId(userId: number) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.getPerformanceMetrics(security.id);
+    }
+
+    // Report incident by User ID
+    async reportIncidentByUserId(
+        userId: number,
+        data: {
+            details: string;
+            location?: string;
+            latitude?: string;
+            longitude?: string;
+        }
+    ) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.reportIncident(security.id, data);
+    }
+
+    // Update device token by User ID
+    async updateDeviceTokenByUserId(userId: number, deviceToken: string) {
+        const security = await this.getOrCreateSecurityForUser(userId);
+        return this.updateDeviceToken(security.id, deviceToken);
+    }
+
+
     async getSecurityByUserId(userId: number) {
         return this.prisma.security.findFirst({
             where: { userId }
         });
+    }
+
+    async getOrCreateSecurityForUser(userId: number, userData?: any) {
+        // Cek apakah sudah ada security record
+        let security = await this.prisma.security.findFirst({
+            where: { userId }
+        });
+
+        // Jika belum ada, kita perlu data user untuk membuat record
+        if (!security) {
+            // Dapatkan data user dari database
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                    namaLengkap: true,
+                    nik: true,
+                    email: true,
+                    nomorTelepon: true,
+                    role: true
+                }
+            });
+
+            if (!user) {
+                throw new NotFoundException(`User dengan ID ${userId} tidak ditemukan`);
+            }
+
+            // Cek role user
+            if (user.role !== 'SATPAM' && user.role !== 'ADMIN') {
+                throw new Error('User tidak memiliki akses sebagai security');
+            }
+
+            security = await this.prisma.security.create({
+                data: {
+                    nama: user.namaLengkap,
+                    nik: user.nik || `USER${userId}`,
+                    email: user.email,
+                    nomorTelepon: user.nomorTelepon,
+                    shift: 'FLEXIBLE',
+                    status: 'ACTIVE',
+                    isOnDuty: false,
+                    emergencyCount: 0,
+                    userId: userId
+                }
+            });
+            this.logger.log(`Created security record for user ${userId}: ${security.id}`);
+        }
+
+        return security;
+    }
+
+    async getDashboardDataByUserId(userId: number) {
+        this.logger.log(`Getting dashboard data for User ID: ${userId}`);
+
+        try {
+            // 1. Cari atau buat security record
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId }
+            });
+
+            if (!user) {
+                throw new NotFoundException(`User dengan ID ${userId} tidak ditemukan`);
+            }
+
+            // Cek role user
+            if (user.role !== 'SATPAM' && user.role !== 'ADMIN') {
+                throw new Error('User tidak memiliki akses sebagai security');
+            }
+
+            // Cari security record berdasarkan userId
+            let security = await this.prisma.security.findFirst({
+                where: { userId }
+            });
+
+            // Jika belum ada, buat otomatis
+            if (!security) {
+                security = await this.prisma.security.create({
+                    data: {
+                        nama: user.namaLengkap,
+                        nik: user.nik || `USER${userId}`,
+                        email: user.email,
+                        nomorTelepon: user.nomorTelepon,
+                        shift: 'FLEXIBLE',
+                        status: 'ACTIVE',
+                        isOnDuty: false,
+                        emergencyCount: 0,
+                        userId: userId
+                    }
+                });
+                this.logger.log(`Auto-created security record: ${security.id}`);
+            }
+
+            // 2. Gunakan security ID untuk get dashboard
+            return await this.getDashboardData(security.id);
+
+        } catch (error) {
+            this.logger.error(`Error in getDashboardDataByUserId: ${error.message}`, error.stack);
+            throw error;
+        }
+    }
+
+    // Security check in by User ID
+    async checkInByUserId(userId: number, location?: string) {
+        // Cari security ID berdasarkan user ID
+        const security = await this.prisma.security.findFirst({
+            where: { userId }
+        });
+
+        if (!security) {
+            throw new NotFoundException(`Security record untuk user ID ${userId} tidak ditemukan`);
+        }
+
+        return this.checkIn(security.id, location);
+    }
+
+    // Security check out by User ID
+    async checkOutByUserId(userId: number) {
+        // Cari security ID berdasarkan user ID
+        const security = await this.prisma.security.findFirst({
+            where: { userId }
+        });
+
+        if (!security) {
+            throw new NotFoundException(`Security record untuk user ID ${userId} tidak ditemukan`);
+        }
+
+        return this.checkOut(security.id);
     }
 }
