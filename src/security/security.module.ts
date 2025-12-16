@@ -8,6 +8,6 @@ import { PrismaModule } from '../prisma/prisma.module';
     imports: [PrismaModule],
     controllers: [SecurityController],
     providers: [SecurityService],
-    exports: [SecurityService]
+    exports: [SecurityService ]
 })
 export class SecurityModule { }

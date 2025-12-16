@@ -7,8 +7,18 @@ import { EmergencyService } from '../emergency/emergency.service';
 export class SecurityService {
     private readonly logger = new Logger(SecurityService.name);
 
-    constructor(private prisma: PrismaService) {
+    constructor(
+        private prisma: PrismaService
+    ) {
         this.logger.log('SecurityService initialized');
+
+        // Debug: List semua model Prisma
+        const prismaModels = Object.keys(this.prisma)
+            .filter(key => !key.startsWith('_') && !key.startsWith('$'))
+            .sort();
+
+        this.logger.log(`Available Prisma models: ${prismaModels.join(', ')}`);
+        this.logger.log(`Has 'security' model: ${'security' in this.prisma}`);
     }
 
 
@@ -16,9 +26,15 @@ export class SecurityService {
     async getDashboardData(securityId: number) {
         this.logger.log(`Getting dashboard data for securityId: ${securityId}`);
 
+        // Debug: Check prisma instance
+        if (!this.prisma) {
+            this.logger.error('PrismaService is undefined!');
+            throw new Error('Database service is not available');
+        }
+
         try {
             // First, verify security exists
-            const securityExists = await this.prisma.security_personnel.findUnique({
+            const securityExists = await this.prisma.security.findUnique({
                 where: { id: securityId }
             });
 
@@ -50,7 +66,7 @@ export class SecurityService {
                     }
                 }),
                 this.getSecurityStats(securityId),
-                this.prisma.security_personnel.findUnique({
+                this.prisma.security.findUnique({
                     where: { id: securityId },
                     select: {
                         id: true,
@@ -94,7 +110,7 @@ export class SecurityService {
 
         try {
             // Verify security exists first
-            const existingSecurity = await this.prisma.security_personnel.findUnique({
+            const existingSecurity = await this.prisma.security.findUnique({
                 where: { id: securityId }
             });
 
@@ -102,7 +118,7 @@ export class SecurityService {
                 throw new NotFoundException(`Security dengan ID ${securityId} tidak ditemukan`);
             }
 
-            const security = await this.prisma.security_personnel.update({
+            const security = await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     isOnDuty: true,
@@ -149,7 +165,7 @@ export class SecurityService {
 
         try {
             // Verify security exists first
-            const existingSecurity = await this.prisma.security_personnel.findUnique({
+            const existingSecurity = await this.prisma.security.findUnique({
                 where: { id: securityId }
             });
 
@@ -157,7 +173,7 @@ export class SecurityService {
                 throw new NotFoundException(`Security dengan ID ${securityId} tidak ditemukan`);
             }
 
-            const security = await this.prisma.security_personnel.update({
+            const security = await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     isOnDuty: false,
@@ -199,7 +215,7 @@ export class SecurityService {
     // Update security location - PERBAIKAN
     async updateLocation(securityId: number, latitude: string, longitude: string) {
         try {
-            const security = await this.prisma.security_personnel.update({
+            const security = await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     currentLatitude: latitude,
@@ -321,7 +337,7 @@ export class SecurityService {
             });
 
             // Increment emergency count for security
-            await this.prisma.security_personnel.update({
+            await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     emergencyCount: {
@@ -414,7 +430,7 @@ export class SecurityService {
 
     // Get all securities - PERBAIKAN
     async getAllSecurities() {
-        return this.prisma.security_personnel.findMany({
+        return this.prisma.security.findMany({
             orderBy: { createdAt: 'desc' }
         });
     }
@@ -427,36 +443,77 @@ export class SecurityService {
         nomorTelepon: string;
         shift?: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FLEXIBLE';
     }) {
-        // Check if email already exists
-        const existingSecurity = await this.prisma.security_personnel.findUnique({
-            where: { email: data.email }
-        });
+        this.logger.log(`Creating new security: ${data.nama}`);
 
-        if (existingSecurity) {
-            throw new Error('Email sudah terdaftar');
-        }
+        try {
+            // Check if email already exists
+            const existingEmail = await this.prisma.security.findUnique({
+                where: { email: data.email }
+            });
 
-        // Check if NIK already exists
-        const existingNIK = await this.prisma.security_personnel.findUnique({
-            where: { nik: data.nik }
-        });
-
-        if (existingNIK) {
-            throw new Error('NIK sudah terdaftar');
-        }
-
-        return this.prisma.security_personnel.create({
-            data: {
-                nama: data.nama,
-                nik: data.nik,
-                email: data.email,
-                nomorTelepon: data.nomorTelepon,
-                shift: data.shift || 'MORNING',
-                status: 'ACTIVE',
-                isOnDuty: false,
-                emergencyCount: 0
+            if (existingEmail) {
+                throw new Error('Email sudah terdaftar');
             }
-        });
+
+            // Check if NIK already exists
+            const existingNIK = await this.prisma.security.findUnique({
+                where: { nik: data.nik }
+            });
+
+            if (existingNIK) {
+                throw new Error('NIK sudah terdaftar');
+            }
+
+            // Create security
+            const newSecurity = await this.prisma.security.create({
+                data: {
+                    nama: data.nama,
+                    nik: data.nik,
+                    email: data.email,
+                    nomorTelepon: data.nomorTelepon,
+                    shift: data.shift || 'MORNING',
+                    status: 'ACTIVE',
+                    isOnDuty: false,
+                    emergencyCount: 0,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }
+            });
+
+            this.logger.log(`Security created successfully with ID: ${newSecurity.id}`);
+
+            // Return simplified response
+            return {
+                success: true,
+                message: 'Security berhasil dibuat',
+                data: {
+                    id: newSecurity.id,
+                    nama: newSecurity.nama,
+                    email: newSecurity.email,
+                    nik: newSecurity.nik,
+                    nomorTelepon: newSecurity.nomorTelepon,
+                    shift: newSecurity.shift,
+                    status: newSecurity.status,
+                    isOnDuty: newSecurity.isOnDuty,
+                    emergencyCount: newSecurity.emergencyCount
+                },
+                timestamp: new Date().toISOString()
+            };
+        } catch (error) {
+            this.logger.error(`Error creating security: ${error.message}`);
+
+            if (error.code === 'P2002') { // Prisma unique constraint error
+                const target = error.meta?.target || [];
+                if (target.includes('email')) {
+                    throw new Error('Email sudah terdaftar');
+                }
+                if (target.includes('nik')) {
+                    throw new Error('NIK sudah terdaftar');
+                }
+            }
+
+            throw new Error(`Gagal membuat security: ${error.message}`);
+        }
     }
 
     // Update security - PERBAIKAN
@@ -475,7 +532,7 @@ export class SecurityService {
         if (data.shift) updateData.shift = data.shift;
         if (data.status) updateData.status = data.status;
 
-        return this.prisma.security_personnel.update({
+        return this.prisma.security.update({
             where: { id },
             data: updateData
         });
@@ -483,7 +540,7 @@ export class SecurityService {
 
     // Delete security - PERBAIKAN
     async deleteSecurity(id: number) {
-        return this.prisma.security_personnel.delete({
+        return this.prisma.security.delete({
             where: { id }
         });
     }
@@ -509,7 +566,7 @@ export class SecurityService {
 
     // Get active securities on duty - PERBAIKAN
     async getActiveSecurities() {
-        return this.prisma.security_personnel.findMany({
+        return this.prisma.security.findMany({
             where: {
                 isOnDuty: true,
                 status: 'ACTIVE'
@@ -529,11 +586,14 @@ export class SecurityService {
 
     // Get security by ID - PERBAIKAN BESAR
     async getSecurityById(id: number) {
-        if (!id) {
-            throw new Error('ID is required');
+
+        // Perbaiki validasi
+        if (!id || isNaN(id) || id <= 0) {
+            this.logger.warn(`Invalid ID provided: ${id}`);
+            throw new NotFoundException('ID security tidak valid');
         }
 
-        return this.prisma.security_personnel.findUnique({
+        return this.prisma.security.findUnique({
             where: { id },
             include: {
                 emergencyResponses: {
@@ -560,7 +620,7 @@ export class SecurityService {
 
     // Update device token for push notifications - PERBAIKAN
     async updateDeviceToken(securityId: number, deviceToken: string) {
-        return this.prisma.security_personnel.update({
+        return this.prisma.security.update({
             where: { id: securityId },
             data: { deviceToken }
         });
@@ -569,7 +629,7 @@ export class SecurityService {
     // Start patrol - PERBAIKAN
     async startPatrol(securityId: number, location?: string) {
         try {
-            const security = await this.prisma.security_personnel.update({
+            const security = await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     isOnDuty: true,
@@ -604,7 +664,7 @@ export class SecurityService {
     // End patrol - PERBAIKAN
     async endPatrol(securityId: number) {
         try {
-            const security = await this.prisma.security_personnel.update({
+            const security = await this.prisma.security.update({
                 where: { id: securityId },
                 data: {
                     isOnDuty: false,
