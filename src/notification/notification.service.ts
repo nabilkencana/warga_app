@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { title } from 'process';
+import { NotificationWebSocketGateway } from './websocket.gateway';
 
 @Injectable()
 export class NotificationService {
@@ -10,7 +12,10 @@ export class NotificationService {
   }
   private readonly logger = new Logger(NotificationService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly websocketGateway: NotificationWebSocketGateway,
+  ) { }
 
   // Helper function to convert data to Prisma format
   private convertToPrismaJson(data: any): any {
@@ -61,7 +66,18 @@ export class NotificationService {
         },
       });
 
+      // Kirim real-time notification via WebSocket
+      await this.websocketGateway.sendNotificationToUser(data.userId, {
+        type: 'NEW_NOTIFICATION',
+        data: {
+          ...notification,
+          timeAgo: 'Baru saja',
+          iconData: this.getIconData(data.type, data.icon),
+        }
+      });
+
       this.logger.log(`Notification created for user ${data.userId}`);
+
       return notification;
     } catch (error) {
       this.logger.error('Failed to create notification', error);
@@ -69,12 +85,30 @@ export class NotificationService {
     }
   }
 
+  // Helper untuk mendapatkan icon berdasarkan type
+  private getIconData(type: NotificationType, customIcon?: string): any {
+    const iconMap = {
+      [NotificationType.ANNOUNCEMENT]: { icon: 'announcement', color: '#3B82F6' },
+      [NotificationType.BILL]: { icon: 'receipt', color: '#EF4444' },
+      [NotificationType.PAYMENT]: { icon: 'payment', color: '#10B981' },
+      [NotificationType.EMERGENCY]: { icon: 'warning', color: '#DC2626' },
+      [NotificationType.COMMUNITY]: { icon: 'people', color: '#8B5CF6' },
+      [NotificationType.REPORT]: { icon: 'report', color: '#F59E0B' },
+    };
+
+    if (customIcon) {
+      return { icon: customIcon, color: '#6B7280' };
+    }
+
+    return iconMap[type] || { icon: 'notifications', color: '#6B7280' };
+  }
+
   // GET USER NOTIFICATIONS
   async getUserNotifications(userId: number, filters?: {
-  isRead?: boolean;
-  type?: NotificationType;
-  limit?: number;
-}, pagination?: PaginationDto) {
+    isRead?: boolean;
+    type?: NotificationType;
+    limit?: number;
+  }, pagination?: PaginationDto) {
     try {
       const where: any = {
         userId,
@@ -234,8 +268,6 @@ export class NotificationService {
           relatedEntityType: data.relatedEntityType,
         })),
       });
-
-      this.logger.log(`Created ${notifications.count} bulk notifications`);
       return { success: true, count: notifications.count };
     } catch (error) {
       this.logger.error('Failed to create bulk notifications', error);
@@ -243,7 +275,7 @@ export class NotificationService {
     }
   }
 
-  // CREATE ANNOUNCEMENT NOTIFICATION
+  // CREATE ANNOUNCEMENT NOTIFICATION (update dengan broadcast)
   async createAnnouncementNotification(
     announcementId: number,
     createdBy: number,
@@ -270,7 +302,6 @@ export class NotificationService {
           select: { id: true },
         });
       } else {
-        // Default: all active users
         users = await this.prisma.user.findMany({
           where: { isActive: true },
           select: { id: true },
@@ -297,6 +328,18 @@ export class NotificationService {
         createdBy,
         relatedEntityId: announcementId.toString(),
         relatedEntityType: 'announcement',
+      });
+
+      // Broadcast via WebSocket
+      await this.websocketGateway.broadcastNotification({
+        type: 'NEW_ANNOUNCEMENT',
+        data: {
+          announcementId,
+          title: 'Pengumuman Baru: ' + title,
+          message,
+          targetAudience,
+          timestamp: new Date(),
+        }
       });
 
       return result;
@@ -331,6 +374,18 @@ export class NotificationService {
           title,
           action: 'view_bill',
         },
+      });
+
+      // Broadcast via WebSocket ke semua user yang terkoneksi
+      await this.websocketGateway.broadcastNotification({
+        type: 'NEW_BILL',
+        data: {
+          billId,
+          userId,
+          amount, 
+          title,
+          createdBy
+        }
       });
 
       return notification;
@@ -392,6 +447,18 @@ export class NotificationService {
         },
       });
 
+      // Broadcast via WebSocket ke semua user yang terkoneksi
+      await this.websocketGateway.broadcastNotification({
+        type: 'NEW_PAYMENT',
+        data: {
+          paymentId,
+          userId,
+          amount,
+          status,
+          description,
+        }
+      });
+
       return notification;
     } catch (error) {
       this.logger.error('Failed to create payment notification', error);
@@ -399,12 +466,13 @@ export class NotificationService {
     }
   }
 
-  // CREATE EMERGENCY NOTIFICATION
+  // CREATE EMERGENCY NOTIFICATION (update dengan broadcast)
   async createEmergencyNotification(
     emergencyId: number,
     userId: number,
     type: string,
     location: string,
+    targetRT?: string // Opsional: untuk broadcast ke RT tertentu
   ) {
     try {
       const notification = await this.createNotification({
@@ -424,6 +492,31 @@ export class NotificationService {
           action: 'view_emergency',
         },
       });
+
+      // Broadcast ke RT tertentu jika ada, atau ke semua
+      if (targetRT) {
+        await this.websocketGateway.broadcastToRT(targetRT, {
+          type: 'EMERGENCY_ALERT',
+          data: {
+            ...notification,
+            emergencyType: type,
+            location,
+            timestamp: new Date(),
+            priority: 'high'
+          }
+        });
+      } else {
+        await this.websocketGateway.broadcastNotification({
+          type: 'EMERGENCY_ALERT',
+          data: {
+            ...notification,
+            emergencyType: type,
+            location,
+            timestamp: new Date(),
+            priority: 'high'
+          }
+        });
+      }
 
       return notification;
     } catch (error) {
@@ -471,6 +564,61 @@ export class NotificationService {
       };
     } catch (error) {
       this.logger.error('Failed to get notification stats', error);
+      throw error;
+    }
+  }
+
+  // CREATE REPORT NOTIFICATION (BARU - untuk admin)
+  async createReportNotification(
+    reportId: number,
+    userId: number,
+    reportType: string,
+    description: string,
+    adminIds: number[] // Admin yang perlu diberitahu
+  ) {
+    try {
+      // Buat notifikasi untuk admin
+      for (const adminId of adminIds) {
+        await this.createNotification({
+          userId: adminId,
+          type: NotificationType.REPORT,
+          title: 'Laporan Baru',
+          message: `Ada laporan ${reportType}: ${description.substring(0, 50)}...`,
+          icon: 'report',
+          iconColor: '#F59E0B',
+          createdBy: userId,
+          relatedEntityId: reportId.toString(),
+          relatedEntityType: 'report',
+          data: {
+            reportId,
+            type: reportType,
+            description,
+            action: 'view_report',
+          },
+        });
+      }
+
+      // Notifikasi untuk user yang melaporkan
+      const userNotification = await this.createNotification({
+        userId,
+        type: NotificationType.REPORT,
+        title: 'Laporan Berhasil',
+        message: `Laporan ${reportType} Anda berhasil dibuat dan sedang diproses`,
+        icon: 'check_circle',
+        iconColor: '#10B981',
+        createdBy: userId,
+        relatedEntityId: reportId.toString(),
+        relatedEntityType: 'report',
+        data: {
+          reportId,
+          type: reportType,
+          action: 'view_report_status',
+        },
+      });
+
+      return userNotification;
+    } catch (error) {
+      this.logger.error('Failed to create report notification', error);
       throw error;
     }
   }

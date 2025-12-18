@@ -19,6 +19,9 @@ import { SecurityService } from './security/security.service';
 import { SecurityModule } from './security/security.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { HealthController } from './health/health.controller';
+import { HealthModule } from './health/health.module';
+import { DebugModule } from 'debug/debug.module';
 
 @Global() // Tambahkan @Global() agar bisa diakses di semua module
 @Module({
@@ -40,9 +43,11 @@ import { join } from 'path';
     CloudinaryModule,
     ProfileModule,
     NotificationModule,
-    SecurityModule// 🔥 aktifkan .env
+    SecurityModule,
+    HealthModule,
+    DebugModule// 🔥 aktifkan .env
   ],
-  controllers: [AppController, SecurityController],
+  controllers: [AppController, SecurityController, HealthController],
   providers: [AppService, SecurityService],
 })
 export class AppModule { }

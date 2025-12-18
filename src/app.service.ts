@@ -7,8 +7,8 @@ export class AppService {
   getDownloadPage(): string {
     // Ambil info real dari APK
     const apkPath = path.join(process.cwd(), 'public/download/app-release.apk');
-    let fileSizeMB = '74';
-    let fileSizeBytes = '77594624'; // 74MB in bytes
+    let fileSizeMB = '80'; // Default 80MB
+    let fileSizeBytes = '83886080'; // 80MB in bytes
 
     if (fs.existsSync(apkPath)) {
       const stats = fs.statSync(apkPath);
