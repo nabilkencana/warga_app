@@ -1,8 +1,10 @@
 // src/debug/debug.module.ts
 import { Module } from '@nestjs/common';
 import { DebugController } from './debug.controller';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
+    imports : [PrismaModule],
     controllers: [DebugController],
 })
 export class DebugModule { }
