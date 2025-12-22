@@ -22,9 +22,6 @@
     "prisma:migrate": "prisma migrate deploy",
     "vercel-build": "npx prisma generate && nest build || echo 'Build mungkin ada warning'"
   },
-  "engines": {
-    "node": ">=18"
-  },
   "postinstall": "prisma generate",
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
