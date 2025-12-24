@@ -1,4 +1,5 @@
 // src/reports/dto/create-report.dto.ts
+import { Type } from 'class-transformer';
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsUrl } from 'class-validator';
 
 export class CreateReportDto {
@@ -14,6 +15,7 @@ export class CreateReportDto {
     @IsNotEmpty()
     category: string;
 
+    @Type(() => Number)   // 🔥 WAJIB
     @IsOptional()
     @IsNumber()
     userId?: number;

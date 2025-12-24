@@ -43,6 +43,19 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
     }
 
     async handleConnection(client: Socket) {
+        const role = client.handshake.query.role;
+
+        if (role === 'ADMIN') {
+            client.join('admin_dashboard');
+            this.logger.log(`Admin connected: ${client.id}`);
+
+            client.emit('admin_connected', {
+                message: 'Admin dashboard connected',
+                timestamp: new Date().toISOString()
+            });
+            return;
+        }
+
         try {
             const securityId = client.handshake.query.securityId;
             const userId = client.handshake.query.userId;
@@ -197,6 +210,12 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
             // 4. Update flag alarm sent di database
             await this.updateAlarmSent(emergency.id);
 
+            this.server.to('admin_dashboard').emit('admin_emergency_new', {
+                type: 'ADMIN_EMERGENCY_NEW',
+                data: alarmData.data
+            });
+
+
             return {
                 success: true,
                 alarmId: emergency.id,
@@ -275,8 +294,8 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
                 // Kirim ke security tertentu
                 this.server.to(`security_${security.id}`).emit('emergency_dispatch', dispatchData);
 
-                // Buat emergency response di database
-                await this.createEmergencyResponse(emergency.id, security.id);
+                // // Buat emergency response di database
+                // await this.createEmergencyResponse(emergency.id, security.id);
 
                 this.logger.log(`📍 Dispatched to nearest security: ${security.nama} (${security.distance.toFixed(2)} km)`);
             }
@@ -397,6 +416,8 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
                     createdBy: securityId,
                     data: { emergencyId: data.emergencyId }
                 });
+
+                this.stopAlarm(data.emergencyId);
             }
 
             return {
@@ -404,12 +425,19 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
                 message: 'Emergency berhasil diterima',
                 data: response
             };
-
         } catch (error) {
             this.logger.error('Error accepting emergency:', error);
             return { success: false, error: error.message };
         }
     }
+
+    private stopAlarm(emergencyId: number) {
+        this.server.to('all_securities').emit('emergency_alarm_stop', {
+            emergencyId,
+            timestamp: new Date().toISOString()
+        });
+    }
+
 
     /**
      * Security tiba di lokasi emergency
