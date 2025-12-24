@@ -369,30 +369,39 @@ export class SecurityService {
 
     // Get assigned emergencies for a security
     async getAssignedEmergencies(securityId: number) {
-        const responses = await this.prisma.emergencyResponse.findMany({
-            where: {
-                securityId,
-                status: { in: ['DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'HANDLING'] }
-            },
-            include: {
-                emergency: {
-                    include: {
-                        user: {
-                            select: {
-                                namaLengkap: true,
-                                nomorTelepon: true
+        this.logger.log(`Getting assigned emergencies for security ${securityId}`);
+
+        try {
+            const responses = await this.prisma.emergencyResponse.findMany({
+                where: {
+                    securityId,
+                    status: { in: ['DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'HANDLING'] }
+                },
+                include: {
+                    emergency: {
+                        include: {
+                            user: {
+                                select: {
+                                    namaLengkap: true,
+                                    nomorTelepon: true
+                                }
                             }
                         }
                     }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+                },
+                orderBy: { createdAt: 'desc' }
+            });
 
-        return responses.map(response => ({
-            ...response,
-            emergency: response.emergency
-        }));
+            this.logger.log(`Found ${responses.length} assigned emergencies for security ${securityId}`);
+
+            return responses.map(response => ({
+                ...response,
+                emergency: response.emergency
+            }));
+        } catch (error) {
+            this.logger.error(`Error getting assigned emergencies for security ${securityId}:`, error);
+            return [];
+        }
     }
 
     // Get security statistics - PERBAIKAN
@@ -564,9 +573,9 @@ export class SecurityService {
         });
     }
 
-    // Get active securities on duty - PERBAIKAN
+    // Get active securities on duty - PERBAIKAN untuk handle null
     async getActiveSecurities() {
-        return this.prisma.security.findMany({
+        const securities = await this.prisma.security.findMany({
             where: {
                 isOnDuty: true,
                 status: 'ACTIVE'
@@ -582,6 +591,9 @@ export class SecurityService {
             },
             orderBy: { lastActiveAt: 'desc' }
         });
+
+        // Filter out securities with null coordinates
+        return securities.filter(sec => sec.currentLatitude && sec.currentLongitude);
     }
 
     // Get security by ID - PERBAIKAN BESAR
@@ -886,7 +898,7 @@ export class SecurityService {
         const security = await this.getOrCreateSecurityForUser(userId);
         return this.getSecurityLogs(security.id);
     }
-    
+
     // Get assigned emergencies by User ID
     async getAssignedEmergenciesByUserId(userId: number) {
         const security = await this.getOrCreateSecurityForUser(userId);

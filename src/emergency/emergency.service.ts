@@ -1,17 +1,30 @@
 // src/emergency/emergency.service.ts
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef , Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SecurityWebSocketGateway } from 'src/security/security-websocket.gateway';
+import { NotificationService } from 'src/notification/notification.service';
+import { NotificationType } from '@prisma/client';
 
 // Import atau define enums
 type EmergencySeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-type NotificationType = 'SYSTEM' | 'ANNOUNCEMENT' | 'REPORT' | 'EMERGENCY' | 'BILL' | 'PAYMENT' | 'SECURITY' | 'PROFILE' | 'COMMUNITY' | 'REMINDER' | 'CUSTOM' | 'SOS_ALERT' | 'PATROL';
+// Ganti import NotificationType dari Prisma dengan type yang kita butuhkan
+type PrismaNotificationType = 'SYSTEM' | 'ANNOUNCEMENT' | 'REPORT' | 'EMERGENCY' | 'BILL' | 'PAYMENT' | 'SECURITY' | 'PROFILE' | 'COMMUNITY' | 'REMINDER' | 'CUSTOM' | 'SOS_ALERT' | 'PATROL';
+
 type SecurityAction = 'CHECK_IN' | 'CHECK_OUT' | 'PATROL_START' | 'PATROL_END' | 'EMERGENCY_RESPONSE' | 'LOCATION_UPDATE' | 'STATUS_CHANGE' | 'INCIDENT_REPORT';
 
 @Injectable()
 export class EmergencyService {
-    constructor(private prisma: PrismaService) { }
+    private readonly logger = new Logger(EmergencyService.name);
 
-    // Create new emergency SOS dengan fitur security
+    constructor(
+        private prisma: PrismaService,
+        private notificationService: NotificationService,
+        private securityWebSocketGateway: SecurityWebSocketGateway, // Hapus forwardRef
+    ) { 
+        this.logger.log('EmergencyService initialized')
+    }
+
+    // Create new emergency SOS dengan auto-trigger alarm
     async createSOS(data: {
         type: string;
         details?: string;
@@ -23,268 +36,221 @@ export class EmergencyService {
         userId?: number;
         severity?: EmergencySeverity;
     }) {
-        const emergency = await this.prisma.emergency.create({
-            data: {
-                type: data.type,
-                details: data.details,
-                location: data.location,
-                latitude: data.latitude,
-                longitude: data.longitude,
-                needVolunteer: data.needVolunteer || false,
-                volunteerCount: data.volunteerCount || 0,
-                severity: (data.severity as any) || 'MEDIUM',
-                status: 'ACTIVE',
-                userId: data.userId,
-                alarmSent: false,
-            },
-            include: {
-                volunteers: true,
-                user: {
-                    select: {
-                        namaLengkap: true,
-                        nomorTelepon: true,
-                    }
-                }
-            },
-        });
-
-        // Kirim alarm ke security
-        await this.sendSecurityAlarm(emergency);
-
-        // Kirim notifikasi ke emergency services jika diperlukan
-        if (data.severity === 'HIGH' || data.severity === 'CRITICAL') {
-            await this.notifyEmergencyServices(emergency);
-        }
-
-        return emergency;
-    }
-
-    // Kirim alarm ke semua security yang sedang bertugas
-    private async sendSecurityAlarm(emergency: any) {
         try {
-            // 1. Dapatkan semua security yang sedang bertugas
-            const activeSecurities = await this.prisma.security.findMany({
-                where: {
-                    isOnDuty: true,
-                    status: 'ACTIVE',
-                },
-                select: {
-                    id: true,
-                    nama: true,
-                    deviceToken: true,
+            this.logger.log(`Creating new SOS emergency: ${data.type}`);
+
+            // ======== PERBAIKAN: Validasi userId ========
+            let validUserId = data.userId;
+            let createdByUserId = data.userId || 0;
+
+            if (validUserId) {
+                // Validasi apakah user ada
+                const userExists = await this.prisma.user.findUnique({
+                    where: { id: validUserId },
+                    select: { id: true }
+                });
+
+                if (!userExists) {
+                    this.logger.warn(`User ID ${validUserId} not found, emergency will be anonymous`);
+                    validUserId = undefined;
+                    createdByUserId = 0;
                 }
-            });
-
-            if (activeSecurities.length === 0) return;
-
-            // 2. Buat notifikasi untuk setiap security
-            const notifications = activeSecurities.map(security => ({
-                title: `🚨 EMERGENCY ALARM - ${emergency.type.toUpperCase()}`,
-                message: `Emergency terjadi di ${emergency.location || 'lokasi tidak diketahui'}. Severity: ${emergency.severity}`,
-                type: 'SOS_ALERT' as NotificationType,
-                icon: 'alert-triangle',
-                iconColor: '#FF0000',
-                data: {
-                    emergencyId: emergency.id,
-                    type: emergency.type,
-                    location: emergency.location,
-                    latitude: emergency.latitude,
-                    longitude: emergency.longitude,
-                    severity: emergency.severity,
-                    timestamp: new Date().toISOString(),
-                    actionRequired: true
-                },
-                isRead: false,
-                userId: security.id,
-                relatedEntityId: emergency.id.toString(),
-                relatedEntityType: 'EMERGENCY',
-                createdBy: emergency.userId || 0,
-            }));
-
-            // 3. Simpan notifikasi ke database
-            await this.prisma.notification.createMany({
-                data: notifications as any
-            });
-
-            // 4. Dispatch security terdekat
-            if (emergency.latitude && emergency.longitude) {
-                await this.dispatchNearestSecurity(emergency);
             }
 
-            // 5. Update flag alarm sent
+            // Jika userId tidak ada atau tidak valid, cari admin sebagai fallback
+            if (!createdByUserId || createdByUserId === 0) {
+                const adminUser = await this.prisma.user.findFirst({
+                    where: { role: 'ADMIN' },
+                    select: { id: true }
+                });
+
+                if (adminUser) {
+                    createdByUserId = adminUser.id;
+                } else {
+                    // Jika tidak ada admin, cari user pertama
+                    const firstUser = await this.prisma.user.findFirst({
+                        orderBy: { id: 'asc' },
+                        select: { id: true }
+                    });
+                    if (firstUser) {
+                        createdByUserId = firstUser.id;
+                    }
+                }
+            }
+
+            // ======== Create emergency ========
+            const emergency = await this.prisma.emergency.create({
+                data: {
+                    type: data.type,
+                    details: data.details,
+                    location: data.location,
+                    latitude: data.latitude,
+                    longitude: data.longitude,
+                    needVolunteer: data.needVolunteer || false,
+                    volunteerCount: data.volunteerCount || 0,
+                    severity: (data.severity as any) || 'MEDIUM',
+                    status: 'ACTIVE',
+                    userId: validUserId, // Gunakan yang sudah divalidasi
+                    alarmSent: false,
+                    needSatpam: true,
+                    satpamAlertSent: false,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            namaLengkap: true,
+                            nomorTelepon: true,
+                            email: true
+                        }
+                    }
+                }
+            });
+
+            this.logger.log(`Emergency created: #${emergency.id} - ${emergency.type}`);
+
+
+            // ========== TRIGGER ALARM KE SECURITY DASHBOARD ==========
+            await this.triggerSecurityAlarm(emergency);
+
+            // ========== KIRIM NOTIFIKASI KE USER ==========
+            if (validUserId) {
+                try {
+                    await this.notificationService.createNotification({
+                        title: 'SOS Emergency Terkirim',
+                        message: `Emergency ${emergency.type} berhasil dilaporkan. Security akan segera menanggapi.`,
+                        type: NotificationType.EMERGENCY,
+                        userId: validUserId,
+                        createdBy: createdByUserId, // Gunakan createdBy yang sudah divalidasi
+                        data: { emergencyId: emergency.id }
+                    });
+
+                    this.logger.log(`Notification sent to user ${validUserId} created by ${createdByUserId}`);
+                } catch (notifError) {
+                    this.logger.warn(`Failed to send notification to user ${validUserId}:`, notifError.message);
+                    // Lanjutkan proses meskipun notifikasi gagal
+                }
+            } else {
+                this.logger.log('Emergency created anonymously, no user notification sent');
+            }
+
+            return {
+                success: true,
+                message: 'SOS emergency berhasil dikirim dan alarm diaktifkan',
+                data: emergency,
+                alarmTriggered: true
+            };
+
+        } catch (error) {
+            this.logger.error('Error creating SOS:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Trigger alarm ke semua security dashboard
+     */
+    // Perbaikan juga method triggerSecurityAlarm untuk notification
+    private async triggerSecurityAlarm(emergency: any) {
+        try {
+            this.logger.log(`Triggering security alarm for emergency #${emergency.id}`);
+
+            // 1. Update flag alarm di database
             await this.prisma.emergency.update({
                 where: { id: emergency.id },
                 data: {
                     alarmSent: true,
-                    alarmSentAt: new Date()
+                    alarmSentAt: new Date(),
+                    satpamAlertSent: true,
+                    satpamAlertSentAt: new Date()
                 }
             });
 
-            // 6. Log aktivitas security
-            await this.logSecurityAction({
-                action: 'EMERGENCY_RESPONSE',
-                details: `Emergency ${emergency.id} - ${emergency.type} reported`,
-                latitude: emergency.latitude,
-                longitude: emergency.longitude
-            });
+            this.logger.log(`Emergency #${emergency.id} alarm flags updated`);
 
-        } catch (error) {
-            console.error('Error sending security alarm:', error);
-        }
-    }
+            // 2. Broadcast alarm via WebSocket
+            const alarmResult = await this.securityWebSocketGateway.broadcastEmergencyAlarm(emergency);
 
-    // Dispatch security terdekat
-    private async dispatchNearestSecurity(emergency: any) {
-        try {
-            // Dapatkan security yang sedang bertugas dan memiliki lokasi
-            const availableSecurities = await this.prisma.security.findMany({
+            // 3. Buat notifikasi di database untuk security
+            const activeSecurities = await this.prisma.security.findMany({
                 where: {
                     isOnDuty: true,
-                    status: 'ACTIVE',
-                    currentLatitude: { not: null },
-                    currentLongitude: { not: null }
-                },
-                select: {
-                    id: true,
-                    nama: true,
-                    currentLatitude: true,
-                    currentLongitude: true
+                    status: 'ACTIVE'
                 }
             });
 
-            if (availableSecurities.length === 0) return;
+            this.logger.log(`Found ${activeSecurities.length} active securities`);
 
-            // Hitung jarak ke setiap security
-            const securityDistances = availableSecurities.map(security => {
-                let distance = 99999;
-                try {
-                    if (emergency.latitude && emergency.longitude && security.currentLatitude && security.currentLongitude) {
-                        distance = this.calculateDistance(
-                            parseFloat(emergency.latitude),
-                            parseFloat(emergency.longitude),
-                            parseFloat(security.currentLatitude),
-                            parseFloat(security.currentLongitude)
-                        );
-                    }
-                } catch (e) {
-                    console.error('Error calculating distance:', e);
-                }
-                return { ...security, distance };
-            });
+            if (activeSecurities.length > 0) {
+                // Cari user admin untuk createdBy fallback
+                const adminUser = await this.prisma.user.findFirst({
+                    where: { role: 'ADMIN' },
+                    select: { id: true }
+                });
 
-            // Urutkan berdasarkan jarak terdekat
-            securityDistances.sort((a, b) => a.distance - b.distance);
+                const createdByFallback = adminUser?.id || emergency.userId || 1;
 
-            // Ambil 3 security terdekat
-            const nearestSecurities = securityDistances.slice(0, 3);
-
-            // Buat emergency response untuk security terdekat
-            for (const security of nearestSecurities) {
-                await this.prisma.emergencyResponse.create({
+                const notifications = activeSecurities.map(security => ({
+                    title: `🚨 EMERGENCY ALARM - ${emergency.type.toUpperCase()}`,
+                    message: `Emergency di ${emergency.location || 'lokasi tidak diketahui'}. Severity: ${emergency.severity}`,
+                    type: NotificationType.SOS_ALERT,
+                    icon: 'alert-triangle',
+                    iconColor: '#FF0000',
                     data: {
                         emergencyId: emergency.id,
-                        securityId: security.id,
-                        responseTime: 0,
-                        status: 'DISPATCHED'
-                    }
-                });
+                        type: emergency.type,
+                        location: emergency.location,
+                        latitude: emergency.latitude,
+                        longitude: emergency.longitude,
+                        severity: emergency.severity,
+                        timestamp: new Date().toISOString()
+                    },
+                    isRead: false,
+                    userId: security.id,
+                    relatedEntityId: emergency.id.toString(),
+                    relatedEntityType: 'EMERGENCY',
+                    createdBy: createdByFallback, // Gunakan fallback yang valid
+                    createdAt: new Date()
+                }));
 
-                // Kirim notifikasi khusus ke security terdekat
-                await this.prisma.notification.create({
-                    data: {
-                        title: `🚨 DISPATCH ORDER - Emergency #${emergency.id}`,
-                        message: `Anda ditugaskan untuk merespons emergency di ${emergency.location}.`,
-                        type: 'SOS_ALERT' as any,
-                        icon: 'navigation',
-                        iconColor: '#FFA500',
-                        data: {
-                            emergencyId: emergency.id,
-                            type: emergency.type,
-                            location: emergency.location,
-                            latitude: emergency.latitude,
-                            longitude: emergency.longitude,
-                            severity: emergency.severity,
-                            dispatchOrder: true,
-                        },
-                        isRead: false,
-                        userId: security.id,
-                        relatedEntityId: emergency.id.toString(),
-                        relatedEntityType: 'EMERGENCY',
-                        createdBy: emergency.userId || 0,
-                    }
-                });
+                try {
+                    await this.prisma.notification.createMany({
+                        data: notifications
+                    });
+                    this.logger.log(`Created ${notifications.length} notifications for active securities`);
+                } catch (notifError) {
+                    this.logger.warn(`Failed to create notifications: ${notifError.message}`);
+                    // Lanjutkan meskipun notifications gagal
+                }
             }
 
+            // 4. Log aktivitas
+            this.logger.log(`🚨 ALARM TRIGGERED: Emergency #${emergency.id} - ${emergency.type}`);
+            this.logger.log(`📡 Broadcast to ${activeSecurities.length} active securities`);
+
+            return alarmResult;
+
         } catch (error) {
-            console.error('Error dispatching security:', error);
+            this.logger.error('Error triggering security alarm:', error);
+            throw error;
         }
     }
 
-    // Notify emergency services
-    private async notifyEmergencyServices(emergency: any) {
-        try {
-            console.log(`Notifying emergency services for emergency #${emergency.id}`);
-
-            await this.logSecurityAction({
-                action: 'INCIDENT_REPORT' as SecurityAction,
-                details: `Emergency #${emergency.id} reported to emergency services`,
-                latitude: emergency.latitude,
-                longitude: emergency.longitude
-            });
-
-        } catch (error) {
-            console.error('Error notifying emergency services:', error);
-        }
+    /**
+     * Update flag alarm sent
+     */
+    async updateAlarmSent(emergencyId: number) {
+        return this.prisma.emergency.update({
+            where: { id: emergencyId },
+            data: {
+                alarmSent: true,
+                alarmSentAt: new Date()
+            }
+        });
     }
 
-    // Log security action
-    private async logSecurityAction(data: {
-        action: SecurityAction;
-        details?: string;
-        location?: string;
-        latitude?: string;
-        longitude?: string;
-    }) {
-        try {
-            const activeSecurities = await this.prisma.security.findMany({
-                where: { isOnDuty: true },
-                select: { id: true }
-            });
-
-            const logs = activeSecurities.map(security => ({
-                securityId: security.id,
-                action: data.action,
-                details: data.details,
-                location: data.location,
-                latitude: data.latitude,
-                longitude: data.longitude,
-                timestamp: new Date()
-            }));
-
-            await this.prisma.securityLog.createMany({
-                data: logs as any
-            });
-        } catch (error) {
-            console.error('Error logging security action:', error);
-        }
-    }
-
-    // Calculate distance utility
-    private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-        const R = 6371; // Radius bumi dalam km
-        const dLat = this.toRad(lat2 - lat1);
-        const dLon = this.toRad(lon2 - lon1);
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-    }
-
-    private toRad(value: number): number {
-        return value * Math.PI / 180;
-    }
 
     // === METHODS UNTUK CONTROLLER ===
 
@@ -485,7 +451,6 @@ export class EmergencyService {
 
     // Resolve emergency
     async resolveEmergency(id: number) {
-        const emergency = await this.getEmergencyById(id);
 
         // Update semua emergency response yang masih aktif
         await this.prisma.emergencyResponse.updateMany({

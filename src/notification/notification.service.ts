@@ -25,7 +25,20 @@ export class NotificationService {
     return data; // Prisma akan otomatis konversi ke JsonValue
   }
 
-  // CREATE NOTIFICATION
+  // Validasi apakah user dengan ID tertentu ada
+  private async validateUserExists(userId: number): Promise<boolean> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true }
+      });
+      return !!user;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // CREATE NOTIFICATION (DIPERBAIKI)
   async createNotification(data: {
     userId: number;
     type: NotificationType;
@@ -41,6 +54,40 @@ export class NotificationService {
     relatedEntityType?: string;
   }) {
     try {
+      // Validasi createdBy user
+      const createdByUserExists = await this.validateUserExists(data.createdBy);
+      if (!createdByUserExists) {
+        this.logger.warn(`User with ID ${data.createdBy} not found, using fallback`);
+
+        // Cari admin user sebagai fallback
+        const adminUser = await this.prisma.user.findFirst({
+          where: { role: 'ADMIN' },
+          select: { id: true }
+        });
+
+        if (adminUser) {
+          data.createdBy = adminUser.id;
+        } else {
+          // Jika tidak ada admin, gunakan user pertama
+          const firstUser = await this.prisma.user.findFirst({
+            orderBy: { id: 'asc' },
+            select: { id: true }
+          });
+          if (firstUser) {
+            data.createdBy = firstUser.id;
+          } else {
+            throw new Error('No users found in database');
+          }
+        }
+      }
+
+      // Validasi userId (penerima notifikasi)
+      const recipientExists = await this.validateUserExists(data.userId);
+      if (!recipientExists) {
+        this.logger.error(`Recipient user with ID ${data.userId} not found`);
+        throw new Error(`Recipient user not found`);
+      }
+
       const notification = await this.prisma.notification.create({
         data: {
           userId: data.userId,
@@ -63,24 +110,41 @@ export class NotificationService {
               namaLengkap: true,
             },
           },
+          user: {
+            select: {
+              id: true,
+              namaLengkap: true,
+            }
+          }
         },
       });
 
       // Kirim real-time notification via WebSocket
-      await this.websocketGateway.sendNotificationToUser(data.userId, {
-        type: 'NEW_NOTIFICATION',
-        data: {
-          ...notification,
-          timeAgo: 'Baru saja',
-          iconData: this.getIconData(data.type, data.icon),
-        }
-      });
+      try {
+        await this.websocketGateway.sendNotificationToUser(data.userId, {
+          type: 'NEW_NOTIFICATION',
+          data: {
+            ...notification,
+            timeAgo: 'Baru saja',
+            iconData: this.getIconData(data.type, data.icon),
+          }
+        });
+      } catch (wsError) {
+        this.logger.warn('Failed to send WebSocket notification:', wsError.message);
+        // Jangan throw error jika WebSocket gagal
+      }
 
-      this.logger.log(`Notification created for user ${data.userId}`);
+      this.logger.log(`Notification created: ${data.title} for user ${data.userId} by user ${data.createdBy}`);
 
       return notification;
     } catch (error) {
-      this.logger.error('Failed to create notification', error);
+      this.logger.error('Failed to create notification:', error);
+
+      // Return error yang lebih user-friendly
+      if (error.code === 'P2003') {
+        throw new Error(`User not found. Please check if user IDs ${data.userId} and ${data.createdBy} exist in the database.`);
+      }
+
       throw error;
     }
   }
