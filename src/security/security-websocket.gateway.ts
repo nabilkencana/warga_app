@@ -18,7 +18,19 @@ import { NotificationType } from '@prisma/client';
 
 @WebSocketGateway({
     cors: {
-        origin: 'https://wargakita.canadev.my.id',
+        origin: (origin, callback) => {
+            const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS?.split(',') || [
+                'http://localhost:3000',
+                'http://localhost:5173',
+                'http://localhost:8080',
+                'https://wargakita.canadev.my.id'
+            ];
+            if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
     },
     transports: ['websocket', 'polling'],
