@@ -191,7 +191,7 @@ export class SecurityWebSocketGateway implements OnGatewayConnection, OnGatewayD
                     createdAt: emergency.createdAt,
                     timestamp: new Date().toISOString(),
                     alarmPriority: this.getAlarmPriority(emergency.severity),
-                    soundUrl: '/sounds/emergency-alarm.mp3',
+                    soundUrl: '/sounds/emergency_alarm.mp3',
                     vibrationPattern: [500, 200, 500]
                 }
             };
