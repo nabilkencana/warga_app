@@ -302,6 +302,7 @@ export class UsersController {
         kkRejectionReason: true,
         kkVerifiedAt: true,
         kkVerifiedBy: true,
+        kkUploadedAt: true,
 
         createdAt: true,
         updatedAt: true,
