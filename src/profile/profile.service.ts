@@ -46,6 +46,7 @@ export class ProfileService {
           // KK Verification Fields
           kkFile: true,
           kkFilePublicId: true,
+          kkUploadedAt: true,
           kkRejectionReason: true,
           kkVerifiedAt: true,
           kkVerifiedBy: true,
@@ -844,7 +845,11 @@ export class ProfileService {
           email: true,
           kkFile: true,
           kkFilePublicId: true,
+          kkUploadedAt: true, // ✅ TAMBAHKAN INI
           kkRejectionReason: true,
+          isVerified: true,
+          kkVerifiedAt: true,
+          updatedAt: true,
         },
       });
 
@@ -902,6 +907,7 @@ export class ProfileService {
         data: {
           kkFile: cloudinaryResult.url,
           kkFilePublicId: cloudinaryResult.public_id,
+          kkUploadedAt: new Date(), // Untuk format date time data
           kkRejectionReason: null, // Reset rejection reason jika ada
           isVerified: false, // Reset status verifikasi
           kkVerifiedAt: null,

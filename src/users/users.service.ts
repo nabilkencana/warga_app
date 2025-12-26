@@ -35,6 +35,7 @@ export class UsersService {
           nik: true,
           nomorTelepon: true,
           role: true,
+          kkUploadedAt: true,
           isVerified: true,
           createdAt: true,
           updatedAt: true,
@@ -744,7 +745,14 @@ export class UsersService {
         select: {
           id: true,
           namaLengkap: true,
+          email: true,
+          kkFile: true,
           kkFilePublicId: true,
+          kkUploadedAt: true, // ✅ TAMBAHKAN INI
+          kkRejectionReason: true,
+          isVerified: true,
+          kkVerifiedAt: true,
+          updatedAt: true,
         },
       });
 
@@ -785,6 +793,7 @@ export class UsersService {
         data: {
           kkFile: cloudinaryResult.url,
           kkFilePublicId: cloudinaryResult.public_id,
+          kkUploadedAt: new Date(), // Untuk format date time 
           kkRejectionReason: null, // Reset alasan penolakan
           kkVerifiedAt: null, // Reset waktu verifikasi
           kkVerifiedBy: null, // Reset verifikator

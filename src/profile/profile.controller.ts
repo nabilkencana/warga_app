@@ -318,6 +318,7 @@ export class ProfileController {
     @Body() body: { verified: boolean; rejectionReason?: string },
     @Request() req,
   ) {
+    console.log('🔥 VERIFY KK CONTROLLER HIT');
     const adminId = this.getUserIdFromRequest(req);
     // TODO: Cek apakah user adalah admin
 
@@ -325,7 +326,7 @@ export class ProfileController {
       Number(targetUserId),
       body.verified,
       body.rejectionReason,
-      adminId
+      adminId,
     );
   }
 

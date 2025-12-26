@@ -13,33 +13,33 @@ datasource db {
 
 // === USER MANAGEMENT ===
 model User {
-  id                                                                           Int                 @id @default(autoincrement())
+  id                                                                           Int                  @id @default(autoincrement())
   namaLengkap                                                                  String
-  nik                                                                          String              @unique
+  nik                                                                          String               @unique
   tanggalLahir                                                                 DateTime
   tempatLahir                                                                  String
-  email                                                                        String              @unique
+  email                                                                        String               @unique
   nomorTelepon                                                                 String
   instagram                                                                    String?
   facebook                                                                     String?
   alamat                                                                       String
   kota                                                                         String
-  negara                                                                       String              @default("Indonesia")
+  negara                                                                       String               @default("Indonesia")
   kodePos                                                                      String
   rtRw                                                                         String
-  role                                                                         UserRole            @default(USER)
+  role                                                                         UserRole             @default(USER)
   fotoProfil                                                                   String?
   bio                                                                          String?
-  isVerified                                                                   Boolean             @default(false)
-  twoFactorEnabled                                                             Boolean             @default(false)
+  isVerified                                                                   Boolean              @default(false)
+  twoFactorEnabled                                                             Boolean              @default(false)
   twoFactorSecret                                                              String?
-  language                                                                     String              @default("id")
+  language                                                                     String               @default("id")
   biometricData                                                                String?
   otpCode                                                                      String?
   otpExpire                                                                    DateTime?
-  isActive                                                                     Boolean             @default(true)
-  createdAt                                                                    DateTime            @default(now())
-  updatedAt                                                                    DateTime            @updatedAt
+  isActive                                                                     Boolean              @default(true)
+  createdAt                                                                    DateTime             @default(now())
+  updatedAt                                                                    DateTime             @updatedAt
 
   // KK Verification Fields
   kkFile                                                                       String?
@@ -47,6 +47,7 @@ model User {
   kkRejectionReason                                                            String?
   kkVerifiedAt                                                                 DateTime?
   kkVerifiedBy              Int?                // ID admin yang memverifikasi
+  kkUploadedAt                                                                 DateTime?
 
   // Profile fields baru
   profilePicture                                                               String?
@@ -62,31 +63,31 @@ model User {
   activityLogs                                                                 ActivityLog[]
 
   // Relations - Dana Community
-  transactions                                                                 Transaction[]      @relation("UserTransactions")
-  createdTransactions                                                          Transaction[]      @relation("TransactionCreatedBy")
-  payments                                                                     Payment[]          @relation("UserPayments")
+  transactions                                                                 Transaction[]       @relation("UserTransactions")
+  createdTransactions                                                          Transaction[]       @relation("TransactionCreatedBy")
+  payments                                                                     Payment[]           @relation("UserPayments")
   memberPayments                                                               MemberPayment[]
   createdFinancialSummaries                                                    FinancialSummary[]
   createdFinancialReports                                                      FinancialReport[]
 
   // Relations - Bill System
-  bills                                                                        Bill[]             @relation("UserBills")
-  createdBills                                                                 Bill[]             @relation("CreatedBills")
+  bills                                                                        Bill[]              @relation("UserBills")
+  createdBills                                                                 Bill[]              @relation("CreatedBills")
 
   // Relations - Notifications
-  notifications                                                                Notification[]     @relation("UserNotifications")
-  createdNotifications                                                         Notification[]     @relation("NotificationCreatedBy")
+  notifications                                                                Notification[]      @relation("UserNotifications")
+  createdNotifications                                                         Notification[]      @relation("NotificationCreatedBy")
 
   // Relations - Admin verifications (Self-relation)
   // Hanya satu sisi yang memiliki fields/references
-  verifiedKKUsers                                                              User[]             @relation("AdminVerifiedUsers")
-  verifiedByAdmin                                                              User?              @relation("AdminVerifiedUsers", fields: [kkVerifiedBy], references: [id])
+  verifiedKKUsers                                                              User[]              @relation("AdminVerifiedUsers")
+  verifiedByAdmin                                                              User?               @relation("AdminVerifiedUsers", fields: [kkVerifiedBy], references: [id])
 
   // New relation for SATPAM role - emergency responses
   satpamEmergencyResponses                                                     EmergencyResponse[]
 
   @@map("users")
-  securities Security[]
+  securities                                                                   Security[]
 }
 
 enum UserRole {
@@ -380,37 +381,37 @@ model Report {
 
 // Tambahkan field di Emergency untuk tracking SATPAM
 model Emergency {
-  id              Int                 @id @default(autoincrement())
-  type            String
-  details         String?
-  location        String?
-  latitude        String?
-  longitude       String?
-  needVolunteer   Boolean             @default(false)
-  volunteerCount  Int                 @default(0)
-  status          String              @default("ACTIVE")
-  severity        EmergencySeverity   @default(MEDIUM)
-  alarmSent       Boolean             @default(false)
-  alarmSentAt     DateTime?
-  
-  // Tambahan untuk SATPAM
-  needSatpam      Boolean             @default(true) // Defaultnya butuh SATPAM
-  satpamAssigned  Boolean             @default(false) // Apakah sudah ada SATPAM yang ditugaskan
-  satpamAlertSent Boolean             @default(false) // Apakah alarm sudah dikirim ke SATPAM
-  satpamAlertSentAt DateTime?         // Kapan alarm dikirim ke SATPAM
-  
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  userId          Int?
+  id                                                                   Int                  @id @default(autoincrement())
+  type                                                                 String
+  details                                                              String?
+  location                                                             String?
+  latitude                                                             String?
+  longitude                                                            String?
+  needVolunteer                                                        Boolean              @default(false)
+  volunteerCount                                                       Int                  @default(0)
+  status                                                               String               @default("ACTIVE")
+  severity                                                             EmergencySeverity    @default(MEDIUM)
+  alarmSent                                                            Boolean              @default(false)
+  alarmSentAt                                                          DateTime?
 
-  volunteers      Volunteer[]
-  user            User?               @relation(fields: [userId], references: [id])
-  emergencyResponses EmergencyResponse[]
+  // Tambahan untuk SATPAM
+  needSatpam                                                           Boolean              @default(true) // Defaultnya butuh SATPAM
+  satpamAssigned                                                       Boolean              @default(false) // Apakah sudah ada SATPAM yang ditugaskan
+  satpamAlertSent                                                      Boolean              @default(false) // Apakah alarm sudah dikirim ke SATPAM
+  satpamAlertSentAt DateTime?         // Kapan alarm dikirim ke SATPAM
+
+  createdAt                                                            DateTime             @default(now())
+  updatedAt                                                            DateTime             @updatedAt
+  userId                                                               Int?
+
+  volunteers                                                           Volunteer[]
+  user                                                                 User?               @relation(fields: [userId], references: [id])
+  emergencyResponses                                                   EmergencyResponse[]
 
   @@map("emergencies")
   @@index([severity])
   @@index([alarmSent])
-  @@index([status, createdAt])
+  @@index([status,                                                     createdAt])
   @@index([needSatpam])
   @@index([satpamAssigned])
 }
@@ -475,32 +476,32 @@ model AdminDashboard {
 
 // === SECURITY SYSTEM ===
 model Security {
-  id                                                           Int                  @id @default(autoincrement())
-  nama                                                         String
-  nik                                                          String               @unique
-  email                                                        String               @unique
-  nomorTelepon                                                 String
-  shift                                                        SecurityShift        @default(MORNING)
-  status                                                       SecurityStatus       @default(ACTIVE)
-  isOnDuty                                                     Boolean              @default(false)
-  currentLocation                                              String?
-  currentLatitude                                              String?
-  currentLongitude                                             String?
-  lastActiveAt                                                 DateTime?
+  id                                                                                                        Int                  @id @default(autoincrement())
+  nama                                                                                                      String
+  nik                                                                                                       String               @unique
+  email                                                                                                     String               @unique
+  nomorTelepon                                                                                              String
+  shift                                                                                                     SecurityShift        @default(MORNING)
+  status                                                                                                    SecurityStatus       @default(ACTIVE)
+  isOnDuty                                                                                                  Boolean              @default(false)
+  currentLocation                                                                                           String?
+  currentLatitude                                                                                           String?
+  currentLongitude                                                                                          String?
+  lastActiveAt                                                                                              DateTime?
   deviceToken                                                  String?           // Untuk push notification
-  emergencyCount                                               Int                  @default(0) // Jumlah emergency yang ditangani
-  
-  // Link ke User untuk SATPAM
-  userId                                                       Int?              @unique // Link ke User untuk role SATPAM
-  
-  //                                                           Relations
-  emergencyResponses                                           EmergencyResponse[]
-  securityLogs                                                 SecurityLog[]
-  notifications                                                Notification[]      @relation("SecurityNotifications")
-  user                                                         User?              @relation(fields: [userId], references: [id]) // Relation ke User
+  emergencyCount                                                                                            Int                  @default(0) // Jumlah emergency yang ditangani
 
-  createdAt                                                    DateTime             @default(now())
-  updatedAt                                                    DateTime             @updatedAt
+  // Link ke User untuk SATPAM
+  userId                                                                                                    Int?                 @unique // Link ke User untuk role SATPAM
+
+  //                                                                                                        Relations
+  emergencyResponses                                                                                        EmergencyResponse[]
+  securityLogs                                                                                              SecurityLog[]
+  notifications                                                                                             Notification[]      @relation("SecurityNotifications")
+  user                                                                                                      User?               @relation(fields: [userId], references: [id]) // Relation ke User
+
+  createdAt                                                                                                 DateTime             @default(now())
+  updatedAt                                                                                                 DateTime             @updatedAt
 
   @@map("security_personnel")
   @@index([shift])
@@ -524,33 +525,33 @@ enum SecurityStatus {
 }
 
 model EmergencyResponse {
-  id                                               Int             @id @default(autoincrement())
-  emergencyId                                      Int
-  securityId                                       Int?
+  id                                                                                 Int                    @id @default(autoincrement())
+  emergencyId                                                                        Int
+  securityId                                                                         Int?
   satpamId           Int?             // ID User dengan role SATPAM
   responseTime                                      Int               // Dalam detik
-  status                                           ResponseStatus  @default(DISPATCHED)
-  actionTaken                                      String?
-  notes                                            String?
-  
+  status                                                                             ResponseStatus         @default(DISPATCHED)
+  actionTaken                                                                        String?
+  notes                                                                              String?
+
   // Status khusus untuk SATPAM
-  satpamStatus                                     SatpamResponseStatus? @default(PENDING) // Status respon dari SATPAM
-  satpamArrivedAt                                  DateTime?
-  satpamCompletedAt                                DateTime?
+  satpamStatus                                                                       SatpamResponseStatus?  @default(PENDING) // Status respon dari SATPAM
+  satpamArrivedAt                                                                    DateTime?
+  satpamCompletedAt                                                                  DateTime?
 
-  //                                               Relations
-  emergency                                        Emergency      @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
-  security                                         Security?      @relation(fields: [securityId], references: [id], onDelete: Cascade)
-  satpamUser                                       User?          @relation(fields: [satpamId], references: [id], onDelete: Cascade) // Relation ke User dengan role SATPAM
+  //                                                                                 Relations
+  emergency                                                                          Emergency             @relation(fields: [emergencyId], references: [id], onDelete: Cascade)
+  security                                                                           Security?             @relation(fields: [securityId], references: [id], onDelete: Cascade)
+  satpamUser                                                                         User?                 @relation(fields: [satpamId], references: [id], onDelete: Cascade) // Relation ke User dengan role SATPAM
 
-  arrivedAt                                        DateTime?
-  completedAt                                      DateTime?
-  createdAt                                        DateTime        @default(now())
-  updatedAt                                        DateTime        @updatedAt
+  arrivedAt                                                                          DateTime?
+  completedAt                                                                        DateTime?
+  createdAt                                                                          DateTime               @default(now())
+  updatedAt                                                                          DateTime               @updatedAt
 
   @@map("emergency_responses")
-  @@unique([emergencyId, securityId])
-  @@unique([emergencyId, satpamId])
+  @@unique([emergencyId,                                                             securityId])
+  @@unique([emergencyId,                                                             satpamId])
   @@index([satpamId])
   @@index([satpamStatus])
 }
