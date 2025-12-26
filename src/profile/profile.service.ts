@@ -129,14 +129,18 @@ export class ProfileService {
       where: {
         id: Number(userId)
       },
-      select: {
-        id: true,
-        namaLengkap: true,
-        kkFile: true,
-        isVerified: true,
-        kkRejectionReason: true,
-        kkVerifiedAt: true,
-        kkVerifiedBy: true,
+      include: {
+        verifiedByAdmin: {
+          select: {
+            id: true,
+            namaLengkap: true,
+            kkFile: true,
+            isVerified: true,
+            kkRejectionReason: true,
+            kkVerifiedAt: true,
+            kkVerifiedBy: true,
+          },
+        },
       },
     });
 
@@ -147,10 +151,13 @@ export class ProfileService {
     const status = this.determineKKVerificationStatus(user);
 
     return {
-      ...user,
-      kkVerificationStatus: status,
-      hasKKDocument: !!user.kkFile,
+      kkVerificationStatus: this.determineKKVerificationStatus(user),
+      kkVerifiedAt: user.kkVerifiedAt,
+      verifiedBy: user.verifiedByAdmin?.namaLengkap ?? null,
+      kkUploadedAt: user.kkUploadedAt,
+      kkRejectionReason: user.kkRejectionReason,
     };
+
   }
 
   // 🟢 Update user profile
@@ -1316,12 +1323,17 @@ export class ProfileService {
           userId: updatedUser.id,
           isVerified: updatedUser.isVerified,
           kkVerifiedAt: updatedUser.kkVerifiedAt,
-          kkVerificationStatus: this.determineKKVerificationStatus(updatedUser),
+
+          // 🔥 INI UNTUK UI
           verifiedBy: updatedUser.verifiedByAdmin
             ? updatedUser.verifiedByAdmin.namaLengkap
             : null,
+
+          // 🔒 INTERNAL (OPTIONAL)
+          kkVerifiedBy: updatedUser.kkVerifiedBy,
         },
       };
+
 
     } catch (error) {
       console.error('❌ Error verifying KK document:', error);
