@@ -89,6 +89,31 @@ export class AuthService {
         throw new UnauthorizedException('Email tidak ditemukan');
       }
 
+      const demoMode = this.config.get('DEMO_MODE') === 'true';
+      const demoOtp = this.config.get('DEMO_OTP') || '123456';
+      const demoAccounts = (this.config.get('DEMO_ACCOUNTS') || '')
+        .split(',')
+        .map(e => e.trim());
+
+      // 🔥 KHUSUS DEMO JURI
+      if (demoMode && demoAccounts.includes(email)) {
+        await this.prisma.user.update({
+          where: { email },
+          data: {
+            otpCode: demoOtp,
+            otpExpire: new Date(Date.now() + 60 * 60 * 1000), // 1 jam
+          },
+        });
+
+        this.logger.warn(`⚠️ DEMO MODE OTP for ${email}: ${demoOtp}`);
+
+        return {
+          message: 'OTP demo aktif (untuk juri)',
+          demo: true,
+        };
+      }
+
+      // ===== OTP NORMAL (USER BIASA) =====
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpire = new Date(Date.now() + 5 * 60 * 1000); // 5 menit
 
